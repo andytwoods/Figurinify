@@ -43,6 +43,16 @@
         <input id="baseHeight" type="number" min="1" max="20" step="0.5" value="1" />
       </div>
       <div class="section">
+        <label for="baseShapeSelect">Base shape</label>
+        <select id="baseShapeSelect">
+          <option value="flat" selected>Flat (cylinder)</option>
+          <option value="rounded">Rounded edge</option>
+          <option value="chamfer">Chamfered edge</option>
+          <option value="dome">Shallow dome</option>
+        </select>
+        <div class="note"><small id="baseShapeDesc">Choose a basic base profile. Shapes keep the top at y = 0 for consistent alignment and export.</small></div>
+      </div>
+      <div class="section">
         <label for="fileInput">Load model (.glb recommended; for .gltf select the .gltf, .bin, and textures)</label>
         <input id="fileInput" type="file" accept=".glb,.gltf,.bin,.png,.jpg,.jpeg,.ktx2" multiple />
       </div>
@@ -71,6 +81,7 @@ import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
 import { STLExporter } from 'https://unpkg.com/three@0.160.0/examples/jsm/exporters/STLExporter.js';
+import * as BufferGeometryUtils from 'https://unpkg.com/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js';
 
 // DOM elements
 const viewportEl = document.getElementById('viewport');
@@ -81,6 +92,8 @@ const baseHeightInput = document.getElementById('baseHeight');
 const fileInput = document.getElementById('fileInput');
 const exportBtn = document.getElementById('exportSTL');
 const resetViewBtn = document.getElementById('resetView');
+const baseShapeSelect = document.getElementById('baseShapeSelect');
+const baseShapeDesc = document.getElementById('baseShapeDesc');
 
 // New UI elements for D&D size and figurine size presets
 const dndSizeSelect = document.getElementById('dndSizeSelect');
@@ -318,12 +331,94 @@ function resizeRenderer() {
 window.addEventListener('resize', resizeRenderer);
 
 
+    function buildBaseGeometry(radiusMM, heightMM, shape = 'flat') {
+      const radialSeg = 64;
+      // All profiles are defined from y = -h/2 (bottom) to y = +h/2 (top),
+      // so when we later place the mesh at y = -h/2, the top sits at world y = 0.
+      const h2 = heightMM / 2;
+      const r = Math.max(0.5, radiusMM);
+      const prof = [];
+
+      const clampFeature = (mm) => Math.max(0.2, Math.min(mm, Math.min(h2, r * 0.5)));
+
+      if (shape === 'flat') {
+        // Simple cylinder profile: two points are enough for a cylinder in Lathe,
+        // but CylinderGeometry is more efficient and robust and already closed.
+        return new THREE.CylinderGeometry(r, r, heightMM, radialSeg);
+      }
+
+      if (shape === 'chamfer') {
+        const c = clampFeature(Math.min(1.0, heightMM * 0.25)); // chamfer size (mm)
+        // Bottom straight wall
+        prof.push(new THREE.Vector2(r, -h2));
+        // Up to start of chamfer
+        prof.push(new THREE.Vector2(r, h2 - c));
+        // Chamfer to top
+        prof.push(new THREE.Vector2(r - c, h2));
+      } else if (shape === 'rounded') {
+        const f = clampFeature(Math.min(1.5, heightMM * 0.35)); // fillet radius (mm)
+        // Bottom straight wall
+        prof.push(new THREE.Vector2(r, -h2));
+        // Up to start of fillet
+        prof.push(new THREE.Vector2(r, h2 - f));
+        // Quarter-circle fillet to the top
+        const segs = 12;
+        for (let i = 1; i <= segs; i++) {
+          const t = i / segs; // 0..1
+          const theta = (Math.PI / 2) * t; // 0..pi/2
+          const x = r - f * (1 - Math.cos(theta));
+          const y = (h2 - f) + f * Math.sin(theta);
+          prof.push(new THREE.Vector2(x, y));
+        }
+      } else if (shape === 'dome') {
+        // Shallow convex dome on the top surface (spherical-ish cap)
+        const d = clampFeature(Math.min(2.0, heightMM * 0.5)); // dome height
+        // Bottom straight wall up to the start of dome area
+        prof.push(new THREE.Vector2(r, -h2));
+        prof.push(new THREE.Vector2(r, h2 - d));
+        // Smoothly reduce radius near the very top forming a shallow dome edge
+        const segs = 16;
+        for (let i = 1; i <= segs; i++) {
+          const t = i / segs; // 0..1 over dome height
+          // ease-in-out curve for smoothness (cosine)
+          const k = 0.5 - 0.5 * Math.cos(Math.PI * t); // 0..1
+          const y = (h2 - d) + d * t;
+          const x = r - d * k; // less reduction in the middle, most at the very top
+          prof.push(new THREE.Vector2(x, y));
+        }
+      } else {
+        // Fallback: treat as flat cylinder
+        return new THREE.CylinderGeometry(r, r, heightMM, radialSeg);
+      }
+
+      // Build Lathe geometry from profile (open at top/bottom by default)
+      const latheSegs = radialSeg;
+      const body = new THREE.LatheGeometry(prof, latheSegs);
+
+      // Add end caps so the base is visually solid in the viewport too
+      const topRadius = Math.max(0.001, prof[prof.length - 1].x);
+      const bottomRadius = r;
+
+      const topCap = new THREE.CircleGeometry(topRadius, radialSeg);
+      topCap.rotateX(-Math.PI / 2); // make normal +Y
+      topCap.translate(0, h2, 0);
+
+      const bottomCap = new THREE.CircleGeometry(bottomRadius, radialSeg);
+      bottomCap.rotateX(Math.PI / 2); // make normal -Y
+      bottomCap.translate(0, -h2, 0);
+
+      // Merge body + caps
+      const merged = BufferGeometryUtils.mergeGeometries([body, topCap, bottomCap], true);
+      merged.computeVertexNormals();
+      return merged;
+    }
+
     function createOrUpdateBase(radiusMM, heightMM) {
       if (radiusMM <= 0) radiusMM = 1;
       if (heightMM <= 0) heightMM = 1;
 
-      const segments = 64;
-      const geometry = new THREE.CylinderGeometry(radiusMM, radiusMM, heightMM, segments);
+      const shape = baseShapeSelect?.value || 'flat';
+      const geometry = buildBaseGeometry(radiusMM, heightMM, shape);
 
       if (!baseMesh) {
         baseMesh = new THREE.Mesh(geometry, baseMaterial);
@@ -613,6 +708,12 @@ baseRadiusSlider.addEventListener('input', () => {
 });
 
 baseHeightInput.addEventListener('change', () => {
+  const diameterCm = Number(baseRadiusSlider.value);
+  const radiusMM = diameterCm * 5; // diameter(cm) -> radius(mm)
+  createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
+});
+
+baseShapeSelect.addEventListener('change', () => {
   const diameterCm = Number(baseRadiusSlider.value);
   const radiusMM = diameterCm * 5; // diameter(cm) -> radius(mm)
   createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
