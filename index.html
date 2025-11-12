@@ -297,6 +297,8 @@ let baseMesh = null;
 
 // Overlap amount: sink model slightly into the base to ensure stability in prints
 const MODEL_BASE_OVERLAP_MM = 0.5;
+// Export orientation: rotate scene to Z-up for STL (most slicers expect Z-up)
+const EXPORT_Z_UP = true;
 
 // Materials
 const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.0, roughness: 1.0 });
@@ -503,20 +505,72 @@ function handleFiles(fileList) {
 }
 
 function doExportSTL() {
-  // Export the exportGroup (model + base)
+  // Export the exportGroup (model + base), robustly handling STLExporter outputs
   const exporter = new STLExporter();
-  const binary = true;
-  const result = exporter.parse(exportGroup, { binary });
-  let blob;
+
+  // Ensure we have something exportable
+  let hasMesh = false;
+  exportGroup.traverse((o) => {
+    if (o.isMesh && o.geometry) hasMesh = true;
+  });
+  if (!hasMesh) {
+    alert('Nothing to export: no meshes found.');
+    return;
+  }
+
+  // Prepare a target group for export. Rotate to Z-up if requested, without affecting the scene.
+  let target = exportGroup;
+  if (EXPORT_Z_UP) {
+    // Deep clone transforms/graph; geometries/materials are shared (fine for export)
+    target = exportGroup.clone(true);
+    // Reset clone world matrices to match current scene
+    exportGroup.updateMatrixWorld(true);
+    target.updateMatrixWorld(true);
+    // Apply Y-up (Three.js) -> Z-up (slicers) conversion: rotate +90° around X (Y -> Z)
+    target.rotation.x = (target.rotation.x || 0) + Math.PI / 2;
+    target.updateMatrixWorld(true);
+  } else {
+    // Make sure matrices are up to date if no clone is used
+    exportGroup.updateMatrixWorld(true);
+  }
+
+  const toBlob = (res, isBinary) => {
+    if (!res) return null;
+    const binType = 'application/vnd.ms-pki.stl';
+    if (res instanceof ArrayBuffer) return new Blob([res], { type: binType });
+    if (ArrayBuffer.isView(res)) return new Blob([res.buffer], { type: binType });
+    if (typeof res === 'string') return new Blob([res], { type: 'text/plain' });
+    return null;
+  };
+
+  let blob = null;
   let filename = 'figure_with_base.stl';
 
-  if (binary && result instanceof ArrayBuffer) {
-    blob = new Blob([result], { type: 'application/vnd.ms-pki.stl' });
-  } else if (typeof result === 'string') {
-    blob = new Blob([result], { type: 'text/plain' });
-  } else {
-    console.error('Unexpected STL export result');
-    return;
+  // Try binary first
+  let result;
+  try {
+    result = exporter.parse(target, { binary: true });
+    blob = toBlob(result, true);
+  } catch (e) {
+    console.warn('Binary STL export threw an error, will try ASCII next:', e);
+  }
+
+  // Fallback to ASCII if needed
+  if (!blob) {
+    try {
+      const ascii = exporter.parse(target, { binary: false });
+      blob = toBlob(ascii, false);
+      filename = 'figure_with_base_ascii.stl';
+      if (!blob) {
+        console.error('Unexpected STL export result type in ASCII mode:', ascii && ascii.constructor && ascii.constructor.name);
+        alert('Export failed: Unexpected result from STL exporter (ASCII). See console for details.');
+        return;
+      }
+    } catch (e) {
+      console.error('ASCII STL export failed:', e);
+      alert('Export failed: STL exporter error. See console for details.');
+      return;
+    }
   }
 
   const link = document.createElement('a');
