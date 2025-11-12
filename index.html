@@ -33,13 +33,14 @@
       </div>
       
       <div class="section">
-        <label for="baseRadius">Base radius (mm)</label>
-        <input id="baseRadius" type="range" min="5" max="80" step="1" value="20" />
-        <span id="baseRadiusValue">20</span>
+        <label for="baseRadius">Base diameter (cm)</label>
+        <input id="baseRadius" type="range" min="1" max="16" step="0.5" value="2.5" />
+        <span id="baseRadiusValue">2.5</span>
+        <div class="note"><small id="baseRadiusDesc"></small></div>
       </div>
       <div class="section">
         <label for="baseHeight">Base height (mm)</label>
-        <input id="baseHeight" type="number" min="1" max="20" step="0.5" value="3" />
+        <input id="baseHeight" type="number" min="1" max="20" step="0.5" value="1" />
       </div>
       <div class="section">
         <label for="fileInput">Load model (.glb recommended)</label>
@@ -75,6 +76,7 @@ import { STLExporter } from 'https://unpkg.com/three@0.160.0/examples/jsm/export
 const viewportEl = document.getElementById('viewport');
 const baseRadiusSlider = document.getElementById('baseRadius');
 const baseRadiusValue = document.getElementById('baseRadiusValue');
+const baseRadiusDesc = document.getElementById('baseRadiusDesc');
 const baseHeightInput = document.getElementById('baseHeight');
 const fileInput = document.getElementById('fileInput');
 const exportBtn = document.getElementById('exportSTL');
@@ -111,11 +113,13 @@ const heroforgePrintSizes = {
     description: 'Scaled for small creatures like gnomes and halflings.',
     standard_miniature: {
       height_range_cm: '2.3–2.8',
-      base_diameter_cm: 2.5
+      base_diameter_cm: 2.5,
+      base_radius_mm: 12.5
     },
     statuette_2x_scale: {
       height_range_cm: '4.6–5.6',
-      base_diameter_cm: 5.0
+      base_diameter_cm: 5.0,
+      base_radius_mm: 25
     },
     stl_custom_scale: {
       scalable: true,
@@ -127,11 +131,13 @@ const heroforgePrintSizes = {
     description: 'Standard humanoid HeroForge miniature scale (roughly 30–32 mm scale).',
     standard_miniature: {
       height_range_cm: '3.2–3.8',
-      base_diameter_cm: 2.5
+      base_diameter_cm: 2.5,
+      base_radius_mm: 12.5
     },
     statuette_2x_scale: {
       height_range_cm: '6.4–7.6',
-      base_diameter_cm: 5.0
+      base_diameter_cm: 5.0,
+      base_radius_mm: 25
     },
     stl_custom_scale: {
       scalable: true,
@@ -143,11 +149,13 @@ const heroforgePrintSizes = {
     description: 'Used for ogres, trolls, mounts, and other large creatures.',
     standard_miniature: {
       height_range_cm: '5.5–7.0',
-      base_diameter_cm: 5.0
+      base_diameter_cm: 5.0,
+      base_radius_mm: 25
     },
     statuette_2x_scale: {
       height_range_cm: '11.0–14.0',
-      base_diameter_cm: 10.0
+      base_diameter_cm: 10.0,
+      base_radius_mm: 50
     },
     stl_custom_scale: {
       scalable: true,
@@ -186,19 +194,36 @@ function updateDndDesc(sizeKey) {
   dndSizeDesc.textContent = `${s.description} Height: ${s.height_range_cm} cm. Examples: ${s.example_creatures.join(', ')}`;
 }
 
+function formatRadiusLabel(r) {
+  return (r % 1 === 0) ? String(r) : r.toFixed(1);
+}
+
+function setBaseRadiusUI(rMm) {
+  // Clamp to slider range
+  const minR = Number(baseRadiusSlider.min);
+  const maxR = Number(baseRadiusSlider.max);
+  const clamped = Math.min(Math.max(rMm, minR), maxR);
+  baseRadiusSlider.value = String(clamped);
+  baseRadiusValue.textContent = formatRadiusLabel(clamped);
+  return clamped;
+}
+
 function updatePresetUI(figSizeKey) {
   const ps = heroforgePrintSizes[figSizeKey];
   if (!ps) return;
   const hRange = ps.standard_miniature.height_range_cm;
   const baseCm = ps.standard_miniature.base_diameter_cm;
+  const baseRadiusMm = ps.standard_miniature.base_radius_mm || (baseCm * 10) / 2;
   recHeightCmEl.textContent = hRange;
   recBaseCmEl.textContent = String(baseCm);
 
-  // Adjust base slider (radius mm from diameter cm)
-  const radiusMm = (baseCm * 10) / 2;
-  baseRadiusSlider.value = String(radiusMm);
-  baseRadiusValue.textContent = String(Math.round(radiusMm));
-  createOrUpdateBase(Number(baseRadiusSlider.value), Number(baseHeightInput.value));
+  // Update base diameter description
+  baseRadiusDesc.textContent = `Recommended for ${figSizeKey} figurine: ${baseCm} cm diameter`;
+
+  // Set base diameter slider to recommended value (clamped) and rebuild base using radius in mm
+  const clamped = setBaseRadiusUI(baseCm);
+  const radiusMM = clamped * 5; // diameter(cm) -> radius(mm)
+  createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
 }
 
     function applyPresetToModel(dndSizeKey, figSizeKey) {
@@ -270,6 +295,9 @@ exportGroup.add(modelGroup);
 
 let baseMesh = null;
 
+// Overlap amount: sink model slightly into the base to ensure stability in prints
+const MODEL_BASE_OVERLAP_MM = 0.5;
+
 // Materials
 const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.0, roughness: 1.0 });
 
@@ -287,26 +315,32 @@ function resizeRenderer() {
 }
 window.addEventListener('resize', resizeRenderer);
 
-function createOrUpdateBase(radiusMM, heightMM) {
-  if (radiusMM <= 0) radiusMM = 1;
-  if (heightMM <= 0) heightMM = 1;
 
-  const segments = 64;
-  const geometry = new THREE.CylinderGeometry(radiusMM, radiusMM, heightMM, segments);
+    function createOrUpdateBase(radiusMM, heightMM) {
+      if (radiusMM <= 0) radiusMM = 1;
+      if (heightMM <= 0) heightMM = 1;
 
-  if (!baseMesh) {
-    baseMesh = new THREE.Mesh(geometry, baseMaterial);
-    baseMesh.receiveShadow = true;
-    baseMesh.castShadow = false;
-    exportGroup.add(baseMesh);
-  } else {
-    baseMesh.geometry.dispose();
-    baseMesh.geometry = geometry;
-  }
-  // We keep the top face at y = 0 so the model sits on it.
-  baseMesh.position.set(0, -heightMM / 2, 0);
-}
+      const segments = 64;
+      const geometry = new THREE.CylinderGeometry(radiusMM, radiusMM, heightMM, segments);
 
+      if (!baseMesh) {
+        baseMesh = new THREE.Mesh(geometry, baseMaterial);
+        baseMesh.receiveShadow = true;
+        baseMesh.castShadow = false;
+        exportGroup.add(baseMesh);
+      } else {
+        baseMesh.geometry.dispose();
+        baseMesh.geometry = geometry;
+      }
+      // Position base so TOP is at y = 0 (base spans [-height, 0])
+      baseMesh.position.set(0, -heightMM / 2, 0);
+
+      // Keep the base diameter (cm) input/label in sync with the actual base geometry
+      if (!isNaN(radiusMM)) {
+        const diameterCm = radiusMM * 0.2; // radius(mm) -> diameter(cm)
+        setBaseRadiusUI(diameterCm);
+      }
+    }
 function computeBBox(object3d) {
   const box = new THREE.Box3().setFromObject(object3d);
   const size = new THREE.Vector3();
@@ -317,11 +351,13 @@ function computeBBox(object3d) {
 }
 
 function alignModelOnBase() {
-  // Move model so its lowest point sits at y = 0 (top of base)
+  // Move model so its lowest point sits slightly below the base top (negative Y),
+  // to ensure a small overlap for stable printing.
   const { box } = computeBBox(modelGroup);
   if (!isFinite(box.min.y) || !isFinite(box.max.y)) return;
   const minY = box.min.y;
-  modelGroup.position.y += -minY; // bring lowest point to y=0
+  // Target lowest point to be at -MODEL_BASE_OVERLAP_MM (base top is at y=0)
+  modelGroup.position.y += -(minY + MODEL_BASE_OVERLAP_MM);
 }
 
 function centerModelXZ() {
@@ -386,11 +422,14 @@ function enableShadows(object, cast = true, receive = true) {
       modelGroup.add(root);
       enableShadows(root, true, true);
 
+      // Apply presets for base and model
+      const dnd = dndSizeSelect.value;
+      const fig = figurineSizeSelect.value;
+      updatePresetUI(fig);
+
       // Initial normalization: center XZ, bring feet to y=0, scale to preset height, then realign
       centerModelXZ();
       alignModelOnBase();
-      const dnd = dndSizeSelect.value;
-      const fig = figurineSizeSelect.value;
       const ps = heroforgePrintSizes[fig];
       if (ps) {
         const range = parseRangeCm(ps.standard_miniature.height_range_cm) || [3.0, 4.0];
@@ -502,6 +541,8 @@ dndSizeSelect.addEventListener('change', () => {
       const dnd = dndSizeSelect.value;
       const fig = figurineSizeSelect.value;
       updateDndDesc(dnd);
+      // Also reset base radius to the recommended value for the current figurine size
+      updatePresetUI(fig);
       applyPresetToModel(dnd, fig);
     });
 
@@ -509,14 +550,17 @@ figurineSizeSelect.addEventListener('change', () => {
   syncFromSelectors();
 });
 baseRadiusSlider.addEventListener('input', () => {
-  const r = Number(baseRadiusSlider.value);
-  baseRadiusValue.textContent = String(r);
-  createOrUpdateBase(r, Number(baseHeightInput.value));
+  const diameterCm = Number(baseRadiusSlider.value);
+  baseRadiusValue.textContent = formatRadiusLabel(diameterCm);
+  const radiusMM = diameterCm * 5; // diameter(cm) -> radius(mm)
+  createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
   // Optionally keep camera focus at center
 });
 
 baseHeightInput.addEventListener('change', () => {
-  createOrUpdateBase(Number(baseRadiusSlider.value), Number(baseHeightInput.value));
+  const diameterCm = Number(baseRadiusSlider.value);
+  const radiusMM = diameterCm * 5; // diameter(cm) -> radius(mm)
+  createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
 });
 
 fileInput.addEventListener('change', (e) => {
@@ -560,8 +604,10 @@ function init() {
   updatePresetUI(figurineSizeSelect.value);
   applyPresetToModel(dndSizeSelect.value, figurineSizeSelect.value);
 
-  // Create base with current radius/height
-  createOrUpdateBase(Number(baseRadiusSlider.value), Number(baseHeightInput.value));
+  // Create base with current diameter(cm) converted to radius(mm)
+  const initDiameterCm = Number(baseRadiusSlider.value);
+  const initRadiusMM = initDiameterCm * 5; // diameter(cm) -> radius(mm)
+  createOrUpdateBase(initRadiusMM, Number(baseHeightInput.value));
 
   // Load default showcase model
   loadDefaultModel();
