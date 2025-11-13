@@ -505,15 +505,78 @@ function scaleModelToHeight(targetHeightMM) {
   modelGroup.scale.setScalar(s);
 }
 
-function fitCameraToObject(object, padding = 20) {
+function fitCameraToObject(object, viewportFill = 0.9) {
+  // Legacy/base-centric framing retained if needed elsewhere.
   const { box, size, center } = computeBBox(object);
-  const maxDim = Math.max(size.x, size.y, size.z);
-  const fov = camera.fov * (Math.PI / 180);
-  let cameraZ = Math.abs(maxDim / (2 * Math.tan(fov / 2)));
-  cameraZ *= 1.2; // a bit further
+  if (!isFinite(size.x) || !isFinite(size.y) || !isFinite(size.z)) return;
 
-  camera.position.set(center.x + cameraZ, center.y + cameraZ * 0.6, center.z + cameraZ);
-  controls.target.copy(new THREE.Vector3(center.x, Math.max(0, center.y - size.y / 2), center.z));
+  // Horizontal extents (largest of X/Z half-size)
+  const halfXZ = 0.5 * Math.max(size.x, size.z);
+
+  // Vertical extent above the base top plane (y = 0). Anything below y=0 is the base body.
+  const topY = box.max.y;
+  const heightAboveBase = Math.max(1e-3, topY - 0);
+
+  // Camera FOVs
+  const vFov = camera.fov * Math.PI / 180; // vertical FOV
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+
+  const fill = Math.max(0.5, Math.min(viewportFill || 0.9, 0.98));
+
+  // Compute distance needed to fit vertically and horizontally; choose the max
+  const distV = heightAboveBase / (Math.tan(vFov / 2) * fill);
+  const distH = halfXZ / (Math.tan(hFov / 2) * fill);
+  const distance = Math.max(distV, distH);
+
+  // Choose a pleasing viewing angle (azimuth -45°, elevation 30°)
+  const azimuth = -Math.PI / 4; // -45° around Y
+  const elevation = Math.PI / 6; // 30° above the XZ plane
+
+  const cosE = Math.cos(elevation);
+  const sinE = Math.sin(elevation);
+  const cosA = Math.cos(azimuth);
+  const sinA = Math.sin(azimuth);
+
+  const dx = distance * sinA * cosE;
+  const dy = distance * sinE;
+  const dz = distance * cosA * cosE;
+
+  // Base-centric target (y = 0)
+  const target = new THREE.Vector3(center.x, 0, center.z);
+
+  camera.position.set(target.x + dx, target.y + dy, target.z + dz);
+  controls.target.copy(target);
+  controls.update();
+}
+
+// Model-centric framing: center on the model's bounding box and fit view without emphasizing the base
+function fitCameraToModel(object, viewportFill = 0.8) {
+  const { size, center } = computeBBox(object);
+  if (!isFinite(size.x) || !isFinite(size.y) || !isFinite(size.z)) return;
+
+  const halfMax = 0.5 * Math.max(size.x, size.z);
+  const vFov = camera.fov * Math.PI / 180;
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+  const fill = Math.max(0.5, Math.min(viewportFill || 0.8, 0.95));
+
+  const distV = (size.y) / (2 * Math.tan(vFov / 2) * fill);
+  const distH = (halfMax) / (Math.tan(hFov / 2) * fill);
+  const distance = Math.max(distV, distH);
+
+  const azimuth = -Math.PI / 4; // -45 deg
+  const elevation = Math.PI / 6; // 30 deg
+  const cosE = Math.cos(elevation);
+  const sinE = Math.sin(elevation);
+  const cosA = Math.cos(azimuth);
+  const sinA = Math.sin(azimuth);
+
+  const dx = distance + distance * 0.0; // distance along view; we still decompose into components
+  const px = center.x + (dx * sinA * cosE);
+  const py = center.y + (dx * sinE);
+  const pz = center.z + (dx * cosA * cosE);
+
+  camera.position.set(px, py, pz);
+  controls.target.copy(center);
   controls.update();
 }
 
@@ -608,7 +671,8 @@ function enableShadows(object, cast = true, receive = true) {
       centerModelXZ();
       alignModelOnBase();
 
-      fitCameraToObject(exportGroup);
+      // Center and frame on the model (not the base)
+      fitCameraToModel(modelGroup);
     }
 
 // Build a resolver that maps dependency URLs in a .gltf to user-selected Files
@@ -805,7 +869,14 @@ fileInput.addEventListener('change', (e) => {
 });
 
 resetViewBtn.addEventListener('click', () => {
-  fitCameraToObject(exportGroup);
+  // If a model is present, center on it; otherwise restore a neutral default view
+  if (modelGroup.children && modelGroup.children.length > 0) {
+    fitCameraToModel(modelGroup);
+  } else {
+    camera.position.set(120, 100, 160);
+    controls.target.set(0, 0, 0);
+    controls.update();
+  }
 });
 
 exportBtn.addEventListener('click', () => {
