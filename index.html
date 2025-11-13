@@ -1,927 +1,996 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Figurinify — Base & STL Exporter</title>
-  <link rel="stylesheet" href="style.css" />
-  <meta name="theme-color" content="#111" />
-  <!-- SweetAlert2 (CDN) for friendly error dialogs -->
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Figurinify — Base & STL Exporter</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link rel="stylesheet" href="style.css"/>
+    <meta name="theme-color" content="#111"/>
+    <!-- SweetAlert2 (CDN) for friendly error dialogs -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
-  <div id="app">
-    <div id="toolbar">
-      <div class="section">
-        <label for="dndSizeSelect">D&D size (real-life)</label>
-        <select id="dndSizeSelect">
-          <option>Small</option>
-          <option selected>Medium</option>
-          <option>Large</option>
-        </select>
-        <div class="note"><small id="dndSizeDesc"></small></div>
-      </div>
-      <div class="section">
-        <label for="figurineSizeSelect">Figurine size to print</label>
-        <select id="figurineSizeSelect">
-          <option>Small</option>
-          <option selected>Medium</option>
-          <option>Large</option>
-        </select>
-        <div class="note">
-          <span>Recommended height (cm): <strong id="recHeightCm">3.2–3.8</strong></span><br />
-          <span>Recommended base diameter (cm): <strong id="recBaseCm">2.5</strong></span>
+<!-- Top navbar with inline quick actions + Advanced toggle -->
+<nav class="navbar navbar-dark bg-dark border-bottom border-secondary">
+    <div class="container-fluid gap-2">
+        <a class="navbar-brand me-2" href="#">Figurinify</a>
+
+        <!-- Quick actions: D&D size, file input, Export -->
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <!-- D&D size (real-life) -->
+            <label for="dndSizeSelect" class="mb-0">DnD Character size</label>
+            <select id="dndSizeSelect" class="form-select form-select-sm bg-dark text-light border-secondary"
+                    style="width:auto; min-width: 140px;">
+                <option>Small</option>
+                <option selected>Medium</option>
+                <option>Large</option>
+            </select>
+            <label for="fileInput">.glb recommended; for .gltf select the .gltf, .bin, and textures</label>
+
+            <!-- File input -->
+            <input id="fileInput" type="file" accept=".glb,.gltf,.bin,.png,.jpg,.jpeg,.ktx2" multiple
+                   class="form-control form-control-sm bg-dark text-light border-secondary"
+                   style="width:auto; max-width:260px;"/>
+            <!-- Export button -->
+            <button id="exportSTL" class="btn btn-sm btn-primary">Export STL</button>
         </div>
-      </div>
-      
-      <div class="section">
-        <label for="baseRadius">Base diameter (cm)</label>
-        <input id="baseRadius" type="range" min="1" max="16" step="0.5" value="2.5" />
-        <span id="baseRadiusValue">2.5</span>
-        <div class="note"><small id="baseRadiusDesc"></small></div>
-      </div>
-      <div class="section">
-        <label for="baseHeight">Base height (mm)</label>
-        <input id="baseHeight" type="number" min="1" max="20" step="0.5" value="1" />
-      </div>
-      <div class="section">
-        <label for="baseShapeSelect">Base shape</label>
-        <select id="baseShapeSelect">
-          <option value="flat" selected>Flat (cylinder)</option>
-          <option value="rounded">Rounded edge</option>
-          <option value="chamfer">Chamfered edge</option>
-          <option value="dome">Shallow dome</option>
-        </select>
-        <div class="note"><small id="baseShapeDesc">Choose a basic base profile. Shapes keep the top at y = 0 for consistent alignment and export.</small></div>
-      </div>
-      <div class="section">
-        <label for="fileInput">Load model (.glb recommended; for .gltf select the .gltf, .bin, and textures)</label>
-        <input id="fileInput" type="file" accept=".glb,.gltf,.bin,.png,.jpg,.jpeg,.ktx2" multiple />
-      </div>
-      <div class="section row">
-        <button id="resetView">Reset View</button>
-        <button id="exportSTL" class="primary">Export STL</button>
-      </div>
+
+        <!-- Advanced toggle aligned to the right (link with caret, not a button) -->
+        <a href="#" class="text-light text-decoration-none dropdown-toggle ms-auto" role="button"
+           data-bs-toggle="collapse" data-bs-target="#controlPanel" aria-controls="controlPanel"
+           aria-expanded="false" aria-label="Toggle advanced">
+            Advanced
+        </a>
+    </div>
+</nav>
+
+<div id="app">
+    <!-- Collapsible controls panel (Advanced) -->
+    <div id="controlPanel" class="collapse">
+        <div id="toolbar" class="bg-dark border-bottom border-secondary">
+            <!-- D&D details note lives here to avoid cluttering navbar -->
+            <div class="section">
+                <div class="note"><small id="dndSizeDesc"></small></div>
+            </div>
+            <div class="section">
+                <label for="figurineSizeSelect">Figurine size to print</label>
+                <select id="figurineSizeSelect">
+                    <option>Small</option>
+                    <option selected>Medium</option>
+                    <option>Large</option>
+                </select>
+                <div class="note">
+                    <span>Recommended height (cm): <strong id="recHeightCm">3.2–3.8</strong></span><br/>
+                    <span>Recommended base diameter (cm): <strong id="recBaseCm">2.5</strong></span>
+                </div>
+            </div>
+
+            <div class="section">
+                <label for="baseRadius">Base diameter (cm)</label>
+                <input id="baseRadius" type="range" min="1" max="16" step="0.5" value="2.5"/>
+                <span id="baseRadiusValue">2.5</span>
+                <div class="note"><small id="baseRadiusDesc"></small></div>
+            </div>
+            <div class="section">
+                <label for="baseHeight">Base height (mm)</label>
+                <input id="baseHeight" type="number" min="1" max="20" step="0.5" value="1"/>
+            </div>
+            <div class="section">
+                <label for="baseShapeSelect">Base shape</label>
+                <select id="baseShapeSelect">
+                    <option value="flat" selected>Flat (cylinder)</option>
+                    <option value="rounded">Rounded edge</option>
+                    <option value="chamfer">Chamfered edge</option>
+                    <option value="dome">Shallow dome</option>
+                </select>
+                <div class="note"><small id="baseShapeDesc">Choose a basic base profile. Shapes keep the top at y = 0
+                    for consistent alignment and export.</small></div>
+            </div>
+            <div class="section row">
+                <button id="resetView">Reset View</button>
+            </div>
+        </div>
     </div>
     <div id="viewport"></div>
-  </div>
+</div>
 
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
-
-  <script type="module">
-// Figurinify — load GLTF, add adjustable base, set target height, export STL
-// Uses Three.js from CDN (ES modules). For best results, open via a local server.
-
-import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
-import { STLExporter } from 'https://unpkg.com/three@0.160.0/examples/jsm/exporters/STLExporter.js';
-import * as BufferGeometryUtils from 'https://unpkg.com/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js';
-import { FontLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/FontLoader.js';
-import { TextGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/TextGeometry.js';
-
-// DOM elements
-const viewportEl = document.getElementById('viewport');
-const baseRadiusSlider = document.getElementById('baseRadius');
-const baseRadiusValue = document.getElementById('baseRadiusValue');
-const baseRadiusDesc = document.getElementById('baseRadiusDesc');
-const baseHeightInput = document.getElementById('baseHeight');
-const fileInput = document.getElementById('fileInput');
-const exportBtn = document.getElementById('exportSTL');
-const resetViewBtn = document.getElementById('resetView');
-const baseShapeSelect = document.getElementById('baseShapeSelect');
-const baseShapeDesc = document.getElementById('baseShapeDesc');
-
-// New UI elements for D&D size and figurine size presets
-const dndSizeSelect = document.getElementById('dndSizeSelect');
-const dndSizeDesc = document.getElementById('dndSizeDesc');
-const figurineSizeSelect = document.getElementById('figurineSizeSelect');
-const recHeightCmEl = document.getElementById('recHeightCm');
-const recBaseCmEl = document.getElementById('recBaseCm');
-
-// Data derived from provided JSON
-const dndSizes = {
-  Small: {
-    description: 'Represents creatures such as halflings or gnomes.',
-    height_range_cm: '90–120',
-    example_creatures: ['Halfling', 'Gnome']
-  },
-  Medium: {
-    description: 'Represents most humanoids such as humans, elves, orcs, etc.',
-    height_range_cm: '120–240',
-    example_creatures: ['Human', 'Elf', 'Orc']
-  },
-  Large: {
-    description: 'Represents ogres, trolls, and similar large beings.',
-    height_range_cm: '240–480',
-    example_creatures: ['Ogre', 'Troll', 'Horse']
-  }
-};
-
-const heroforgePrintSizes = {
-  Small: {
-    description: 'Scaled for small creatures like gnomes and halflings.',
-    standard_miniature: {
-      height_range_cm: '2.3–2.8',
-      base_diameter_cm: 2.5,
-      base_radius_mm: 12.5
-    },
-    statuette_2x_scale: {
-      height_range_cm: '4.6–5.6',
-      base_diameter_cm: 5.0,
-      base_radius_mm: 25
-    },
-    stl_custom_scale: {
-      scalable: true,
-      recommended_range_cm: '2.0–10.0',
-      notes: 'STL files can be scaled manually in slicing software for home printing.'
-    }
-  },
-  Medium: {
-    description: 'Standard humanoid HeroForge miniature scale (roughly 30–32 mm scale).',
-    standard_miniature: {
-      height_range_cm: '3.2–3.8',
-      base_diameter_cm: 2.5,
-      base_radius_mm: 12.5
-    },
-    statuette_2x_scale: {
-      height_range_cm: '6.4–7.6',
-      base_diameter_cm: 5.0,
-      base_radius_mm: 25
-    },
-    stl_custom_scale: {
-      scalable: true,
-      recommended_range_cm: '3.0–15.0',
-      notes: 'STL files can be printed at custom scales or for display models.'
-    }
-  },
-  Large: {
-    description: 'Used for ogres, trolls, mounts, and other large creatures.',
-    standard_miniature: {
-      height_range_cm: '5.5–7.0',
-      base_diameter_cm: 5.0,
-      base_radius_mm: 25
-    },
-    statuette_2x_scale: {
-      height_range_cm: '11.0–14.0',
-      base_diameter_cm: 10.0,
-      base_radius_mm: 50
-    },
-    stl_custom_scale: {
-      scalable: true,
-      recommended_range_cm: '6.0–25.0',
-      notes: "Physical HeroForge prints can be upscaled through their 'Refined XL' options or scaled manually if printed at home."
-    }
-  }
-};
-
-function parseRangeCm(rangeStr) {
-  // Accepts strings like '3.2–3.8' or '3.2-3.8'
-  const parts = rangeStr.replace(/\s/g, '').split(/[–-]/);
-  if (parts.length !== 2) return null;
-  const min = parseFloat(parts[0]);
-  const max = parseFloat(parts[1]);
-  if (!isFinite(min) || !isFinite(max)) return null;
-  return [min, max];
-}
-
-function chooseFromRange([min, max], bias) {
-  if (!isFinite(min) || !isFinite(max)) return null;
-  // Exact mapping:
-  // 'low' (D&D Small)   -> min of range
-  // 'mid' (D&D Medium)  -> midpoint of range
-  // 'high' (D&D Large)  -> max of range
-  switch (bias) {
-    case 'low': return min;
-    case 'high': return max;
-    default: return (min + max) / 2;
-  }
-}
-
-function updateDndDesc(sizeKey) {
-  const s = dndSizes[sizeKey];
-  if (!s) { dndSizeDesc.textContent = ''; return; }
-  dndSizeDesc.textContent = `${s.description} Height: ${s.height_range_cm} cm. Examples: ${s.example_creatures.join(', ')}`;
-}
-
-function formatRadiusLabel(r) {
-  return (r % 1 === 0) ? String(r) : r.toFixed(1);
-}
-
-function setBaseRadiusUI(rMm) {
-  // Clamp to slider range
-  const minR = Number(baseRadiusSlider.min);
-  const maxR = Number(baseRadiusSlider.max);
-  const clamped = Math.min(Math.max(rMm, minR), maxR);
-  baseRadiusSlider.value = String(clamped);
-  baseRadiusValue.textContent = formatRadiusLabel(clamped);
-  return clamped;
-}
-
-function updatePresetUI(figSizeKey) {
-  const ps = heroforgePrintSizes[figSizeKey];
-  if (!ps) return;
-  const hRange = ps.standard_miniature.height_range_cm;
-  const baseCm = ps.standard_miniature.base_diameter_cm;
-  const baseRadiusMm = ps.standard_miniature.base_radius_mm || (baseCm * 10) / 2;
-  recHeightCmEl.textContent = hRange;
-  recBaseCmEl.textContent = String(baseCm);
-
-  // Update base diameter description
-  baseRadiusDesc.textContent = `Recommended for ${figSizeKey} figurine: ${baseCm} cm diameter`;
-
-  // Set base diameter slider to recommended value (clamped) and rebuild base using radius in mm
-  const clamped = setBaseRadiusUI(baseCm);
-  const radiusMM = clamped * 5; // diameter(cm) -> radius(mm)
-  createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
-}
-
-    function applyPresetToModel(dndSizeKey, figSizeKey) {
-      const ps = heroforgePrintSizes[figSizeKey];
-      if (!ps) return;
-      const range = parseRangeCm(ps.standard_miniature.height_range_cm) || [3.0, 4.0];
-      let bias = 'mid';
-      if (dndSizeKey === 'Small') bias = 'low';
-      else if (dndSizeKey === 'Large') bias = 'high';
-      const targetHeightCm = chooseFromRange(range, bias);
-      const targetHeightMm = Math.round(targetHeightCm * 10);
-
-      if (modelGroup.children.length > 0) {
-        // Reset scale before applying new scale to avoid cumulative scaling
-        modelGroup.scale.setScalar(1);
-        scaleModelToHeight(targetHeightMm);
-        alignModelOnBase();
-        centerModelXZ();
-        //fitCameraToObject(exportGroup);
+<script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
       }
     }
+</script>
 
-// THREE.js essentials
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x111111);
+<script type="module">
+    // Figurinify — load GLTF, add adjustable base, set target height, export STL
+    // Uses Three.js from CDN (ES modules). For best results, open via a local server.
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-viewportEl.appendChild(renderer.domElement);
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import {OrbitControls} from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+    import {GLTFLoader} from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+    import {STLExporter} from 'https://unpkg.com/three@0.160.0/examples/jsm/exporters/STLExporter.js';
+    import * as BufferGeometryUtils from 'https://unpkg.com/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js';
+    import {FontLoader} from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/FontLoader.js';
+    import {TextGeometry} from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/TextGeometry.js';
 
-const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
-camera.position.set(120, 100, 160);
+    // DOM elements
+    const viewportEl = document.getElementById('viewport');
+    const baseRadiusSlider = document.getElementById('baseRadius');
+    const baseRadiusValue = document.getElementById('baseRadiusValue');
+    const baseRadiusDesc = document.getElementById('baseRadiusDesc');
+    const baseHeightInput = document.getElementById('baseHeight');
+    const fileInput = document.getElementById('fileInput');
+    const exportBtn = document.getElementById('exportSTL');
+    const resetViewBtn = document.getElementById('resetView');
+    const baseShapeSelect = document.getElementById('baseShapeSelect');
+    const baseShapeDesc = document.getElementById('baseShapeDesc');
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.05;
-controls.target.set(0, 40, 0);
+    // New UI elements for D&D size and figurine size presets
+    const dndSizeSelect = document.getElementById('dndSizeSelect');
+    const dndSizeDesc = document.getElementById('dndSizeDesc');
+    const figurineSizeSelect = document.getElementById('figurineSizeSelect');
+    const recHeightCmEl = document.getElementById('recHeightCm');
+    const recBaseCmEl = document.getElementById('recBaseCm');
 
-// Lights
-const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
-hemi.position.set(0, 1, 0);
-scene.add(hemi);
+    // Data derived from provided JSON
+    const dndSizes = {
+        Small: {
+            description: 'Represents creatures such as halflings or gnomes.',
+            height_range_cm: '90–120',
+            example_creatures: ['Halfling', 'Gnome']
+        },
+        Medium: {
+            description: 'Represents most humanoids such as humans, elves, orcs, etc.',
+            height_range_cm: '120–240',
+            example_creatures: ['Human', 'Elf', 'Orc']
+        },
+        Large: {
+            description: 'Represents ogres, trolls, and similar large beings.',
+            height_range_cm: '240–480',
+            example_creatures: ['Ogre', 'Troll', 'Horse']
+        }
+    };
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-dirLight.position.set(100, 200, 100);
-dirLight.castShadow = true;
-dirLight.shadow.mapSize.set(2048, 2048);
-dirLight.shadow.camera.near = 10;
-dirLight.shadow.camera.far = 1000;
-dirLight.shadow.camera.left = -200;
-dirLight.shadow.camera.right = 200;
-dirLight.shadow.camera.top = 200;
-dirLight.shadow.camera.bottom = -200;
-scene.add(dirLight);
+    const heroforgePrintSizes = {
+        Small: {
+            description: 'Scaled for small creatures like gnomes and halflings.',
+            standard_miniature: {
+                height_range_cm: '2.3–2.8',
+                base_diameter_cm: 2.5,
+                base_radius_mm: 12.5
+            },
+            statuette_2x_scale: {
+                height_range_cm: '4.6–5.6',
+                base_diameter_cm: 5.0,
+                base_radius_mm: 25
+            },
+            stl_custom_scale: {
+                scalable: true,
+                recommended_range_cm: '2.0–10.0',
+                notes: 'STL files can be scaled manually in slicing software for home printing.'
+            }
+        },
+        Medium: {
+            description: 'Standard humanoid HeroForge miniature scale (roughly 30–32 mm scale).',
+            standard_miniature: {
+                height_range_cm: '3.2–3.8',
+                base_diameter_cm: 2.5,
+                base_radius_mm: 12.5
+            },
+            statuette_2x_scale: {
+                height_range_cm: '6.4–7.6',
+                base_diameter_cm: 5.0,
+                base_radius_mm: 25
+            },
+            stl_custom_scale: {
+                scalable: true,
+                recommended_range_cm: '3.0–15.0',
+                notes: 'STL files can be printed at custom scales or for display models.'
+            }
+        },
+        Large: {
+            description: 'Used for ogres, trolls, mounts, and other large creatures.',
+            standard_miniature: {
+                height_range_cm: '5.5–7.0',
+                base_diameter_cm: 5.0,
+                base_radius_mm: 25
+            },
+            statuette_2x_scale: {
+                height_range_cm: '11.0–14.0',
+                base_diameter_cm: 10.0,
+                base_radius_mm: 50
+            },
+            stl_custom_scale: {
+                scalable: true,
+                recommended_range_cm: '6.0–25.0',
+                notes: "Physical HeroForge prints can be upscaled through their 'Refined XL' options or scaled manually if printed at home."
+            }
+        }
+    };
 
-// Ground grid (for reference only, not exported)
-const grid = new THREE.GridHelper(400, 40, 0x444444, 0x222222);
-scene.add(grid);
+    function parseRangeCm(rangeStr) {
+        // Accepts strings like '3.2–3.8' or '3.2-3.8'
+        const parts = rangeStr.replace(/\s/g, '').split(/[–-]/);
+        if (parts.length !== 2) return null;
+        const min = parseFloat(parts[0]);
+        const max = parseFloat(parts[1]);
+        if (!isFinite(min) || !isFinite(max)) return null;
+        return [min, max];
+    }
 
-// Groups: we'll export this combined group
-const exportGroup = new THREE.Group();
-scene.add(exportGroup);
+    function chooseFromRange([min, max], bias) {
+        if (!isFinite(min) || !isFinite(max)) return null;
+        // Exact mapping:
+        // 'low' (D&D Small)   -> min of range
+        // 'mid' (D&D Medium)  -> midpoint of range
+        // 'high' (D&D Large)  -> max of range
+        switch (bias) {
+            case 'low':
+                return min;
+            case 'high':
+                return max;
+            default:
+                return (min + max) / 2;
+        }
+    }
 
-const modelGroup = new THREE.Group();
-modelGroup.name = 'ModelGroup';
-exportGroup.add(modelGroup);
+    function updateDndDesc(sizeKey) {
+        const s = dndSizes[sizeKey];
+        if (!s) {
+            dndSizeDesc.textContent = '';
+            return;
+        }
+        dndSizeDesc.textContent = `${s.description} Height: ${s.height_range_cm} cm. Examples: ${s.example_creatures.join(', ')}`;
+    }
 
-let baseMesh = null;
-let placeholderGroup = null; // floating "load your model" text (not exported)
+    function formatRadiusLabel(r) {
+        return (r % 1 === 0) ? String(r) : r.toFixed(1);
+    }
 
-// Overlap amount: sink model slightly into the base to ensure stability in prints
-const MODEL_BASE_OVERLAP_MM = 0.5;
-// Export orientation: rotate scene to Z-up for STL (most slicers expect Z-up)
-const EXPORT_Z_UP = true;
+    function setBaseRadiusUI(rMm) {
+        // Clamp to slider range
+        const minR = Number(baseRadiusSlider.min);
+        const maxR = Number(baseRadiusSlider.max);
+        const clamped = Math.min(Math.max(rMm, minR), maxR);
+        baseRadiusSlider.value = String(clamped);
+        baseRadiusValue.textContent = formatRadiusLabel(clamped);
+        return clamped;
+    }
 
-// Materials
-const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.0, roughness: 1.0 });
+    function updatePresetUI(figSizeKey) {
+        const ps = heroforgePrintSizes[figSizeKey];
+        if (!ps) return;
+        const hRange = ps.standard_miniature.height_range_cm;
+        const baseCm = ps.standard_miniature.base_diameter_cm;
+        const baseRadiusMm = ps.standard_miniature.base_radius_mm || (baseCm * 10) / 2;
+        recHeightCmEl.textContent = hRange;
+        recBaseCmEl.textContent = String(baseCm);
 
-// Loading Manager + GLTF Loader
-const loadingManager = new THREE.LoadingManager();
-const loader = new GLTFLoader(loadingManager);
+        // Update base diameter description
+        baseRadiusDesc.textContent = `Recommended for ${figSizeKey} figurine: ${baseCm} cm diameter`;
 
-// SweetAlert2 helper — show model loading errors in a friendly way
-function showLoadError(title, infoHtml) {
-  if (typeof Swal !== 'undefined' && Swal && typeof Swal.fire === 'function') {
-    Swal.fire({
-      icon: 'error',
-      title: title || 'Model Load Error',
-      html: infoHtml || 'Something went wrong while loading the model.',
-      confirmButtonText: 'OK'
-    });
-  } else {
-    // Fallback if SweetAlert2 couldn't load
-    alert((title ? title + ': ' : '') + (infoHtml ? infoHtml.replace(/<[^>]*>/g, '') : 'Model load failed.'));
-  }
-}
+        // Set base diameter slider to recommended value (clamped) and rebuild base using radius in mm
+        const clamped = setBaseRadiusUI(baseCm);
+        const radiusMM = clamped * 5; // diameter(cm) -> radius(mm)
+        createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
+    }
 
-// Report resource-level errors (e.g., missing .bin/texture during gltf load)
-loadingManager.onError = (url) => {
-  const msg = `A required resource failed to load.<br><code>${url}</code><br><br>` +
-    'Tips:<ul style="text-align:left;">' +
-    '<li>If you opened this page with file://, run a local server to avoid CORS issues.</li>' +
-    '<li>For .gltf, be sure to select the .gltf, its .bin, and any textures together.</li>' +
-    '</ul>';
-  showLoadError('Model Resource Error', msg);
-};
+    function applyPresetToModel(dndSizeKey, figSizeKey) {
+        const ps = heroforgePrintSizes[figSizeKey];
+        if (!ps) return;
+        const range = parseRangeCm(ps.standard_miniature.height_range_cm) || [3.0, 4.0];
+        let bias = 'mid';
+        if (dndSizeKey === 'Small') bias = 'low';
+        else if (dndSizeKey === 'Large') bias = 'high';
+        const targetHeightCm = chooseFromRange(range, bias);
+        const targetHeightMm = Math.round(targetHeightCm * 10);
 
-function resizeRenderer() {
-  const rect = viewportEl.getBoundingClientRect();
-  const width = Math.max(200, rect.width);
-  const height = Math.max(200, rect.height);
-  renderer.setSize(width, height, false);
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
-}
-window.addEventListener('resize', resizeRenderer);
+        if (modelGroup.children.length > 0) {
+            // Reset scale before applying new scale to avoid cumulative scaling
+            modelGroup.scale.setScalar(1);
+            scaleModelToHeight(targetHeightMm);
+            alignModelOnBase();
+            centerModelXZ();
+            //fitCameraToObject(exportGroup);
+        }
+    }
+
+    // THREE.js essentials
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+
+    const renderer = new THREE.WebGLRenderer({antialias: true, alpha: false});
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    viewportEl.appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
+    camera.position.set(120, 100, 160);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 40, 0);
+
+    // Lights
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    hemi.position.set(0, 1, 0);
+    scene.add(hemi);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(100, 200, 100);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.near = 10;
+    dirLight.shadow.camera.far = 1000;
+    dirLight.shadow.camera.left = -200;
+    dirLight.shadow.camera.right = 200;
+    dirLight.shadow.camera.top = 200;
+    dirLight.shadow.camera.bottom = -200;
+    scene.add(dirLight);
+
+    // Ground grid (for reference only, not exported)
+    const grid = new THREE.GridHelper(400, 40, 0x444444, 0x222222);
+    scene.add(grid);
+
+    // Groups: we'll export this combined group
+    const exportGroup = new THREE.Group();
+    scene.add(exportGroup);
+
+    const modelGroup = new THREE.Group();
+    modelGroup.name = 'ModelGroup';
+    exportGroup.add(modelGroup);
+
+    let baseMesh = null;
+    let placeholderGroup = null; // floating "load your model" text (not exported)
+
+    // Overlap amount: sink model slightly into the base to ensure stability in prints
+    const MODEL_BASE_OVERLAP_MM = 0.5;
+    // Export orientation: rotate scene to Z-up for STL (most slicers expect Z-up)
+    const EXPORT_Z_UP = true;
+
+    // Materials
+    const baseMaterial = new THREE.MeshStandardMaterial({color: 0x777777, metalness: 0.0, roughness: 1.0});
+
+    // Loading Manager + GLTF Loader
+    const loadingManager = new THREE.LoadingManager();
+    const loader = new GLTFLoader(loadingManager);
+
+    // SweetAlert2 helper — show model loading errors in a friendly way
+    function showLoadError(title, infoHtml) {
+        if (typeof Swal !== 'undefined' && Swal && typeof Swal.fire === 'function') {
+            Swal.fire({
+                icon: 'error',
+                title: title || 'Model Load Error',
+                html: infoHtml || 'Something went wrong while loading the model.',
+                confirmButtonText: 'OK'
+            });
+        } else {
+            // Fallback if SweetAlert2 couldn't load
+            alert((title ? title + ': ' : '') + (infoHtml ? infoHtml.replace(/<[^>]*>/g, '') : 'Model load failed.'));
+        }
+    }
+
+    // Report resource-level errors (e.g., missing .bin/texture during gltf load)
+    loadingManager.onError = (url) => {
+        const msg = `A required resource failed to load.<br><code>${url}</code><br><br>` +
+            'Tips:<ul style="text-align:left;">' +
+            '<li>If you opened this page with file://, run a local server to avoid CORS issues.</li>' +
+            '<li>For .gltf, be sure to select the .gltf, its .bin, and any textures together.</li>' +
+            '</ul>';
+        showLoadError('Model Resource Error', msg);
+    };
+
+    function resizeRenderer() {
+        const rect = viewportEl.getBoundingClientRect();
+        const width = Math.max(200, rect.width);
+        const height = Math.max(200, rect.height);
+        renderer.setSize(width, height, false);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+    }
+
+    window.addEventListener('resize', resizeRenderer);
+
+    // Ensure the Three.js renderer resizes when the Bootstrap collapse opens/closes
+    const controlPanelEl = document.getElementById('controlPanel');
+    if (controlPanelEl) {
+        ['shown.bs.collapse', 'hidden.bs.collapse'].forEach((evt) => {
+            controlPanelEl.addEventListener(evt, () => {
+                // After the collapse animation completes, recalc sizes
+                requestAnimationFrame(() => resizeRenderer());
+            });
+        });
+    }
+
+    // Also observe viewport size changes (e.g., CSS/layout changes) and resize the renderer
+    if ('ResizeObserver' in window) {
+        const ro = new ResizeObserver(() => {
+            resizeRenderer();
+        });
+        ro.observe(viewportEl);
+    }
 
 
     function buildBaseGeometry(radiusMM, heightMM, shape = 'flat') {
-      const radialSeg = 64;
-      // All profiles are defined from y = -h/2 (bottom) to y = +h/2 (top),
-      // so when we later place the mesh at y = -h/2, the top sits at world y = 0.
-      const h2 = heightMM / 2;
-      const r = Math.max(0.5, radiusMM);
-      const prof = [];
+        const radialSeg = 64;
+        // All profiles are defined from y = -h/2 (bottom) to y = +h/2 (top),
+        // so when we later place the mesh at y = -h/2, the top sits at world y = 0.
+        const h2 = heightMM / 2;
+        const r = Math.max(0.5, radiusMM);
+        const prof = [];
 
-      const clampFeature = (mm) => Math.max(0.2, Math.min(mm, Math.min(h2, r * 0.5)));
+        const clampFeature = (mm) => Math.max(0.2, Math.min(mm, Math.min(h2, r * 0.5)));
 
-      if (shape === 'flat') {
-        // Simple cylinder profile: two points are enough for a cylinder in Lathe,
-        // but CylinderGeometry is more efficient and robust and already closed.
-        return new THREE.CylinderGeometry(r, r, heightMM, radialSeg);
-      }
-
-      if (shape === 'chamfer') {
-        const c = clampFeature(Math.min(1.0, heightMM * 0.25)); // chamfer size (mm)
-        // Bottom straight wall
-        prof.push(new THREE.Vector2(r, -h2));
-        // Up to start of chamfer
-        prof.push(new THREE.Vector2(r, h2 - c));
-        // Chamfer to top
-        prof.push(new THREE.Vector2(r - c, h2));
-      } else if (shape === 'rounded') {
-        const f = clampFeature(Math.min(1.5, heightMM * 0.35)); // fillet radius (mm)
-        // Bottom straight wall
-        prof.push(new THREE.Vector2(r, -h2));
-        // Up to start of fillet
-        prof.push(new THREE.Vector2(r, h2 - f));
-        // Quarter-circle fillet to the top
-        const segs = 12;
-        for (let i = 1; i <= segs; i++) {
-          const t = i / segs; // 0..1
-          const theta = (Math.PI / 2) * t; // 0..pi/2
-          const x = r - f * (1 - Math.cos(theta));
-          const y = (h2 - f) + f * Math.sin(theta);
-          prof.push(new THREE.Vector2(x, y));
+        if (shape === 'flat') {
+            // Simple cylinder profile: two points are enough for a cylinder in Lathe,
+            // but CylinderGeometry is more efficient and robust and already closed.
+            return new THREE.CylinderGeometry(r, r, heightMM, radialSeg);
         }
-      } else if (shape === 'dome') {
-        // Shallow convex dome on the top surface (spherical-ish cap)
-        const d = clampFeature(Math.min(2.0, heightMM * 0.5)); // dome height
-        // Bottom straight wall up to the start of dome area
-        prof.push(new THREE.Vector2(r, -h2));
-        prof.push(new THREE.Vector2(r, h2 - d));
-        // Smoothly reduce radius near the very top forming a shallow dome edge
-        const segs = 16;
-        for (let i = 1; i <= segs; i++) {
-          const t = i / segs; // 0..1 over dome height
-          // ease-in-out curve for smoothness (cosine)
-          const k = 0.5 - 0.5 * Math.cos(Math.PI * t); // 0..1
-          const y = (h2 - d) + d * t;
-          const x = r - d * k; // less reduction in the middle, most at the very top
-          prof.push(new THREE.Vector2(x, y));
+
+        if (shape === 'chamfer') {
+            const c = clampFeature(Math.min(1.0, heightMM * 0.25)); // chamfer size (mm)
+            // Bottom straight wall
+            prof.push(new THREE.Vector2(r, -h2));
+            // Up to start of chamfer
+            prof.push(new THREE.Vector2(r, h2 - c));
+            // Chamfer to top
+            prof.push(new THREE.Vector2(r - c, h2));
+        } else if (shape === 'rounded') {
+            const f = clampFeature(Math.min(1.5, heightMM * 0.35)); // fillet radius (mm)
+            // Bottom straight wall
+            prof.push(new THREE.Vector2(r, -h2));
+            // Up to start of fillet
+            prof.push(new THREE.Vector2(r, h2 - f));
+            // Quarter-circle fillet to the top
+            const segs = 12;
+            for (let i = 1; i <= segs; i++) {
+                const t = i / segs; // 0..1
+                const theta = (Math.PI / 2) * t; // 0..pi/2
+                const x = r - f * (1 - Math.cos(theta));
+                const y = (h2 - f) + f * Math.sin(theta);
+                prof.push(new THREE.Vector2(x, y));
+            }
+        } else if (shape === 'dome') {
+            // Shallow convex dome on the top surface (spherical-ish cap)
+            const d = clampFeature(Math.min(2.0, heightMM * 0.5)); // dome height
+            // Bottom straight wall up to the start of dome area
+            prof.push(new THREE.Vector2(r, -h2));
+            prof.push(new THREE.Vector2(r, h2 - d));
+            // Smoothly reduce radius near the very top forming a shallow dome edge
+            const segs = 16;
+            for (let i = 1; i <= segs; i++) {
+                const t = i / segs; // 0..1 over dome height
+                // ease-in-out curve for smoothness (cosine)
+                const k = 0.5 - 0.5 * Math.cos(Math.PI * t); // 0..1
+                const y = (h2 - d) + d * t;
+                const x = r - d * k; // less reduction in the middle, most at the very top
+                prof.push(new THREE.Vector2(x, y));
+            }
+        } else {
+            // Fallback: treat as flat cylinder
+            return new THREE.CylinderGeometry(r, r, heightMM, radialSeg);
         }
-      } else {
-        // Fallback: treat as flat cylinder
-        return new THREE.CylinderGeometry(r, r, heightMM, radialSeg);
-      }
 
-      // Build Lathe geometry from profile (open at top/bottom by default)
-      const latheSegs = radialSeg;
-      const body = new THREE.LatheGeometry(prof, latheSegs);
+        // Build Lathe geometry from profile (open at top/bottom by default)
+        const latheSegs = radialSeg;
+        const body = new THREE.LatheGeometry(prof, latheSegs);
 
-      // Add end caps so the base is visually solid in the viewport too
-      const topRadius = Math.max(0.001, prof[prof.length - 1].x);
-      const bottomRadius = r;
+        // Add end caps so the base is visually solid in the viewport too
+        const topRadius = Math.max(0.001, prof[prof.length - 1].x);
+        const bottomRadius = r;
 
-      const topCap = new THREE.CircleGeometry(topRadius, radialSeg);
-      topCap.rotateX(-Math.PI / 2); // make normal +Y
-      topCap.translate(0, h2, 0);
+        const topCap = new THREE.CircleGeometry(topRadius, radialSeg);
+        topCap.rotateX(-Math.PI / 2); // make normal +Y
+        topCap.translate(0, h2, 0);
 
-      const bottomCap = new THREE.CircleGeometry(bottomRadius, radialSeg);
-      bottomCap.rotateX(Math.PI / 2); // make normal -Y
-      bottomCap.translate(0, -h2, 0);
+        const bottomCap = new THREE.CircleGeometry(bottomRadius, radialSeg);
+        bottomCap.rotateX(Math.PI / 2); // make normal -Y
+        bottomCap.translate(0, -h2, 0);
 
-      // Merge body + caps
-      const merged = BufferGeometryUtils.mergeGeometries([body, topCap, bottomCap], true);
-      merged.computeVertexNormals();
-      return merged;
+        // Merge body + caps
+        const merged = BufferGeometryUtils.mergeGeometries([body, topCap, bottomCap], true);
+        merged.computeVertexNormals();
+        return merged;
     }
 
     function createOrUpdateBase(radiusMM, heightMM) {
-      if (radiusMM <= 0) radiusMM = 1;
-      if (heightMM <= 0) heightMM = 1;
+        if (radiusMM <= 0) radiusMM = 1;
+        if (heightMM <= 0) heightMM = 1;
 
-      const shape = baseShapeSelect?.value || 'flat';
-      const geometry = buildBaseGeometry(radiusMM, heightMM, shape);
+        const shape = baseShapeSelect?.value || 'flat';
+        const geometry = buildBaseGeometry(radiusMM, heightMM, shape);
 
-      if (!baseMesh) {
-        baseMesh = new THREE.Mesh(geometry, baseMaterial);
-        baseMesh.receiveShadow = true;
-        baseMesh.castShadow = false;
-        exportGroup.add(baseMesh);
-      } else {
-        baseMesh.geometry.dispose();
-        baseMesh.geometry = geometry;
-      }
-      // Position base so TOP is at y = 0 (base spans [-height, 0])
-      baseMesh.position.set(0, -heightMM / 2, 0);
+        if (!baseMesh) {
+            baseMesh = new THREE.Mesh(geometry, baseMaterial);
+            baseMesh.receiveShadow = true;
+            baseMesh.castShadow = false;
+            exportGroup.add(baseMesh);
+        } else {
+            baseMesh.geometry.dispose();
+            baseMesh.geometry = geometry;
+        }
+        // Position base so TOP is at y = 0 (base spans [-height, 0])
+        baseMesh.position.set(0, -heightMM / 2, 0);
 
-      // Keep the base diameter (cm) input/label in sync with the actual base geometry
-      if (!isNaN(radiusMM)) {
-        const diameterCm = radiusMM * 0.2; // radius(mm) -> diameter(cm)
-        setBaseRadiusUI(diameterCm);
-      }
+        // Keep the base diameter (cm) input/label in sync with the actual base geometry
+        if (!isNaN(radiusMM)) {
+            const diameterCm = radiusMM * 0.2; // radius(mm) -> diameter(cm)
+            setBaseRadiusUI(diameterCm);
+        }
     }
-function computeBBox(object3d) {
-  const box = new THREE.Box3().setFromObject(object3d);
-  const size = new THREE.Vector3();
-  const center = new THREE.Vector3();
-  box.getSize(size);
-  box.getCenter(center);
-  return { box, size, center };
-}
 
-function alignModelOnBase() {
-  // Move model so its lowest point sits slightly below the base top (negative Y),
-  // to ensure a small overlap for stable printing.
-  const { box } = computeBBox(modelGroup);
-  if (!isFinite(box.min.y) || !isFinite(box.max.y)) return;
-  const minY = box.min.y;
-  // Target lowest point to be at -MODEL_BASE_OVERLAP_MM (base top is at y=0)
-  modelGroup.position.y += -(minY + MODEL_BASE_OVERLAP_MM);
-}
-
-function centerModelXZ() {
-  const { box, center } = computeBBox(modelGroup);
-  if (!isFinite(center.x) || !isFinite(center.z)) return;
-  const offsetX = -center.x;
-  const offsetZ = -center.z;
-  modelGroup.position.x += offsetX;
-  modelGroup.position.z += offsetZ;
-}
-
-function scaleModelToHeight(targetHeightMM) {
-  // Compute current height of modelGroup (before alignment), then scale uniformly
-  const { box } = computeBBox(modelGroup);
-  const currentHeight = box.max.y - box.min.y;
-  if (currentHeight <= 0) return;
-  const s = targetHeightMM / currentHeight;
-  modelGroup.scale.setScalar(s);
-}
-
-function fitCameraToObject(object, viewportFill = 0.9) {
-  // Legacy/base-centric framing retained if needed elsewhere.
-  const { box, size, center } = computeBBox(object);
-  if (!isFinite(size.x) || !isFinite(size.y) || !isFinite(size.z)) return;
-
-  // Horizontal extents (largest of X/Z half-size)
-  const halfXZ = 0.5 * Math.max(size.x, size.z);
-
-  // Vertical extent above the base top plane (y = 0). Anything below y=0 is the base body.
-  const topY = box.max.y;
-  const heightAboveBase = Math.max(1e-3, topY - 0);
-
-  // Camera FOVs
-  const vFov = camera.fov * Math.PI / 180; // vertical FOV
-  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
-
-  const fill = Math.max(0.5, Math.min(viewportFill || 0.9, 0.98));
-
-  // Compute distance needed to fit vertically and horizontally; choose the max
-  const distV = heightAboveBase / (Math.tan(vFov / 2) * fill);
-  const distH = halfXZ / (Math.tan(hFov / 2) * fill);
-  const distance = Math.max(distV, distH);
-
-  // Choose a pleasing viewing angle (azimuth -45°, elevation 30°)
-  const azimuth = -Math.PI / 4; // -45° around Y
-  const elevation = Math.PI / 6; // 30° above the XZ plane
-
-  const cosE = Math.cos(elevation);
-  const sinE = Math.sin(elevation);
-  const cosA = Math.cos(azimuth);
-  const sinA = Math.sin(azimuth);
-
-  const dx = distance * sinA * cosE;
-  const dy = distance * sinE;
-  const dz = distance * cosA * cosE;
-
-  // Base-centric target (y = 0)
-  const target = new THREE.Vector3(center.x, 0, center.z);
-
-  camera.position.set(target.x + dx, target.y + dy, target.z + dz);
-  controls.target.copy(target);
-  controls.update();
-}
-
-// Model-centric framing: center on the model's bounding box and fit view without emphasizing the base
-function fitCameraToModel(object, viewportFill = 0.8) {
-  const { size, center } = computeBBox(object);
-  if (!isFinite(size.x) || !isFinite(size.y) || !isFinite(size.z)) return;
-
-  const halfMax = 0.5 * Math.max(size.x, size.z);
-  const vFov = camera.fov * Math.PI / 180;
-  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
-  const fill = Math.max(0.5, Math.min(viewportFill || 0.8, 0.95));
-
-  const distV = (size.y) / (2 * Math.tan(vFov / 2) * fill);
-  const distH = (halfMax) / (Math.tan(hFov / 2) * fill);
-  const distance = Math.max(distV, distH);
-
-  const azimuth = -Math.PI / 4; // -45 deg
-  const elevation = Math.PI / 6; // 30 deg
-  const cosE = Math.cos(elevation);
-  const sinE = Math.sin(elevation);
-  const cosA = Math.cos(azimuth);
-  const sinA = Math.sin(azimuth);
-
-  const dx = distance + distance * 0.0; // distance along view; we still decompose into components
-  const px = center.x + (dx * sinA * cosE);
-  const py = center.y + (dx * sinE);
-  const pz = center.z + (dx * cosA * cosE);
-
-  camera.position.set(px, py, pz);
-  controls.target.copy(center);
-  controls.update();
-}
-
-// Placeholder 3D text shown until a model is loaded
-function showPlaceholderText() {
-  if (placeholderGroup) return; // already visible
-  const fontLoader = new FontLoader();
-  const fontUrl = 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json';
-  fontLoader.load(fontUrl, (font) => {
-    const geom = new TextGeometry('load your model', {
-      font,
-      size: 16, // mm
-      height: 2,
-      curveSegments: 12,
-      bevelEnabled: false
-    });
-    geom.center();
-    const mat = new THREE.MeshStandardMaterial({ color: 0xffcc66, metalness: 0.1, roughness: 0.6, emissive: 0x221100, emissiveIntensity: 0.2 });
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.castShadow = true;
-    mesh.receiveShadow = false;
-
-    placeholderGroup = new THREE.Group();
-    placeholderGroup.add(mesh);
-    placeholderGroup.position.set(0, 30, 0); // float above base top (y=0)
-    scene.add(placeholderGroup);
-  }, (xhr) => {}, (err) => {
-    console.warn('Failed to load placeholder font:', err);
-  });
-}
-
-function hidePlaceholderText() {
-  if (!placeholderGroup) return;
-  placeholderGroup.traverse((o) => {
-    if (o.isMesh) {
-      o.geometry && o.geometry.dispose();
-      if (Array.isArray(o.material)) {
-        o.material.forEach(m => m && m.dispose && m.dispose());
-      } else if (o.material) {
-        o.material.dispose && o.material.dispose();
-      }
+    function computeBBox(object3d) {
+        const box = new THREE.Box3().setFromObject(object3d);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+        box.getSize(size);
+        box.getCenter(center);
+        return {box, size, center};
     }
-  });
-  scene.remove(placeholderGroup);
-  placeholderGroup = null;
-}
 
-function clearGroup(group) {
-  for (let i = group.children.length - 1; i >= 0; i--) {
-    const child = group.children[i];
-    group.remove(child);
-  }
-}
-
-function enableShadows(object, cast = true, receive = true) {
-  object.traverse((obj) => {
-    if (obj.isMesh) {
-      obj.castShadow = cast;
-      obj.receiveShadow = receive;
+    function alignModelOnBase() {
+        // Move model so its lowest point sits slightly below the base top (negative Y),
+        // to ensure a small overlap for stable printing.
+        const {box} = computeBBox(modelGroup);
+        if (!isFinite(box.min.y) || !isFinite(box.max.y)) return;
+        const minY = box.min.y;
+        // Target lowest point to be at -MODEL_BASE_OVERLAP_MM (base top is at y=0)
+        modelGroup.position.y += -(minY + MODEL_BASE_OVERLAP_MM);
     }
-  });
-}
+
+    function centerModelXZ() {
+        const {box, center} = computeBBox(modelGroup);
+        if (!isFinite(center.x) || !isFinite(center.z)) return;
+        const offsetX = -center.x;
+        const offsetZ = -center.z;
+        modelGroup.position.x += offsetX;
+        modelGroup.position.z += offsetZ;
+    }
+
+    function scaleModelToHeight(targetHeightMM) {
+        // Compute current height of modelGroup (before alignment), then scale uniformly
+        const {box} = computeBBox(modelGroup);
+        const currentHeight = box.max.y - box.min.y;
+        if (currentHeight <= 0) return;
+        const s = targetHeightMM / currentHeight;
+        modelGroup.scale.setScalar(s);
+    }
+
+    function fitCameraToObject(object, viewportFill = 0.9) {
+        // Legacy/base-centric framing retained if needed elsewhere.
+        const {box, size, center} = computeBBox(object);
+        if (!isFinite(size.x) || !isFinite(size.y) || !isFinite(size.z)) return;
+
+        // Horizontal extents (largest of X/Z half-size)
+        const halfXZ = 0.5 * Math.max(size.x, size.z);
+
+        // Vertical extent above the base top plane (y = 0). Anything below y=0 is the base body.
+        const topY = box.max.y;
+        const heightAboveBase = Math.max(1e-3, topY - 0);
+
+        // Camera FOVs
+        const vFov = camera.fov * Math.PI / 180; // vertical FOV
+        const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+
+        const fill = Math.max(0.5, Math.min(viewportFill || 0.9, 0.98));
+
+        // Compute distance needed to fit vertically and horizontally; choose the max
+        const distV = heightAboveBase / (Math.tan(vFov / 2) * fill);
+        const distH = halfXZ / (Math.tan(hFov / 2) * fill);
+        const distance = Math.max(distV, distH);
+
+        // Choose a pleasing viewing angle (azimuth -45°, elevation 30°)
+        const azimuth = -Math.PI / 4; // -45° around Y
+        const elevation = Math.PI / 6; // 30° above the XZ plane
+
+        const cosE = Math.cos(elevation);
+        const sinE = Math.sin(elevation);
+        const cosA = Math.cos(azimuth);
+        const sinA = Math.sin(azimuth);
+
+        const dx = distance * sinA * cosE;
+        const dy = distance * sinE;
+        const dz = distance * cosA * cosE;
+
+        // Base-centric target (y = 0)
+        const target = new THREE.Vector3(center.x, 0, center.z);
+
+        camera.position.set(target.x + dx, target.y + dy, target.z + dz);
+        controls.target.copy(target);
+        controls.update();
+    }
+
+    // Model-centric framing: center on the model's bounding box and fit view without emphasizing the base
+    function fitCameraToModel(object, viewportFill = 0.8) {
+        const {size, center} = computeBBox(object);
+        if (!isFinite(size.x) || !isFinite(size.y) || !isFinite(size.z)) return;
+
+        const halfMax = 0.5 * Math.max(size.x, size.z);
+        const vFov = camera.fov * Math.PI / 180;
+        const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+        const fill = Math.max(0.5, Math.min(viewportFill || 0.8, 0.95));
+
+        const distV = (size.y) / (2 * Math.tan(vFov / 2) * fill);
+        const distH = (halfMax) / (Math.tan(hFov / 2) * fill);
+        const distance = Math.max(distV, distH);
+
+        const azimuth = -Math.PI / 4; // -45 deg
+        const elevation = Math.PI / 6; // 30 deg
+        const cosE = Math.cos(elevation);
+        const sinE = Math.sin(elevation);
+        const cosA = Math.cos(azimuth);
+        const sinA = Math.sin(azimuth);
+
+        const dx = distance + distance * 0.0; // distance along view; we still decompose into components
+        const px = center.x + (dx * sinA * cosE);
+        const py = center.y + (dx * sinE);
+        const pz = center.z + (dx * cosA * cosE);
+
+        camera.position.set(px, py, pz);
+        controls.target.copy(center);
+        controls.update();
+    }
+
+    // Placeholder 3D text shown until a model is loaded
+    function showPlaceholderText() {
+        if (placeholderGroup) return; // already visible
+        const fontLoader = new FontLoader();
+        const fontUrl = 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json';
+        fontLoader.load(fontUrl, (font) => {
+            const geom = new TextGeometry('load your model', {
+                font,
+                size: 16, // mm
+                height: 2,
+                curveSegments: 12,
+                bevelEnabled: false
+            });
+            geom.center();
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0xffcc66,
+                metalness: 0.1,
+                roughness: 0.6,
+                emissive: 0x221100,
+                emissiveIntensity: 0.2
+            });
+            const mesh = new THREE.Mesh(geom, mat);
+            mesh.castShadow = true;
+            mesh.receiveShadow = false;
+
+            placeholderGroup = new THREE.Group();
+            placeholderGroup.add(mesh);
+            placeholderGroup.position.set(0, 30, 0); // float above base top (y=0)
+            scene.add(placeholderGroup);
+        }, (xhr) => {
+        }, (err) => {
+            console.warn('Failed to load placeholder font:', err);
+        });
+    }
+
+    function hidePlaceholderText() {
+        if (!placeholderGroup) return;
+        placeholderGroup.traverse((o) => {
+            if (o.isMesh) {
+                o.geometry && o.geometry.dispose();
+                if (Array.isArray(o.material)) {
+                    o.material.forEach(m => m && m.dispose && m.dispose());
+                } else if (o.material) {
+                    o.material.dispose && o.material.dispose();
+                }
+            }
+        });
+        scene.remove(placeholderGroup);
+        placeholderGroup = null;
+    }
+
+    function clearGroup(group) {
+        for (let i = group.children.length - 1; i >= 0; i--) {
+            const child = group.children[i];
+            group.remove(child);
+        }
+    }
+
+    function enableShadows(object, cast = true, receive = true) {
+        object.traverse((obj) => {
+            if (obj.isMesh) {
+                obj.castShadow = cast;
+                obj.receiveShadow = receive;
+            }
+        });
+    }
 
     function setModelFromGLTF(gltf) {
-      clearGroup(modelGroup);
+        clearGroup(modelGroup);
 
-      const root = gltf.scene || gltf.scenes?.[0];
-      modelGroup.add(root);
-      enableShadows(root, true, true);
+        const root = gltf.scene || gltf.scenes?.[0];
+        modelGroup.add(root);
+        enableShadows(root, true, true);
 
-      // Remove placeholder text when a real model is present
-      hidePlaceholderText();
+        // Remove placeholder text when a real model is present
+        hidePlaceholderText();
 
-      // Apply presets for base and model
-      const dnd = dndSizeSelect.value;
-      const fig = figurineSizeSelect.value;
-      updatePresetUI(fig);
+        // Apply presets for base and model
+        const dnd = dndSizeSelect.value;
+        const fig = figurineSizeSelect.value;
+        updatePresetUI(fig);
 
-      // Initial normalization: center XZ, bring feet to y=0, scale to preset height, then realign
-      centerModelXZ();
-      alignModelOnBase();
-      const ps = heroforgePrintSizes[fig];
-      if (ps) {
-        const range = parseRangeCm(ps.standard_miniature.height_range_cm) || [3.0, 4.0];
-        let bias = 'mid';
-        if (dnd === 'Small') bias = 'low';
-        else if (dnd === 'Large') bias = 'high';
-        const targetHeightCm = chooseFromRange(range, bias);
-        const targetHeightMm = Math.round(targetHeightCm * 10);
-        scaleModelToHeight(targetHeightMm);
-      }
-      centerModelXZ();
-      alignModelOnBase();
+        // Initial normalization: center XZ, bring feet to y=0, scale to preset height, then realign
+        centerModelXZ();
+        alignModelOnBase();
+        const ps = heroforgePrintSizes[fig];
+        if (ps) {
+            const range = parseRangeCm(ps.standard_miniature.height_range_cm) || [3.0, 4.0];
+            let bias = 'mid';
+            if (dnd === 'Small') bias = 'low';
+            else if (dnd === 'Large') bias = 'high';
+            const targetHeightCm = chooseFromRange(range, bias);
+            const targetHeightMm = Math.round(targetHeightCm * 10);
+            scaleModelToHeight(targetHeightMm);
+        }
+        centerModelXZ();
+        alignModelOnBase();
 
-      // Center and frame on the model (not the base)
-      fitCameraToModel(modelGroup);
+        // Center and frame on the model (not the base)
+        fitCameraToModel(modelGroup);
     }
 
-// Build a resolver that maps dependency URLs in a .gltf to user-selected Files
-function makeFileResolver(files) {
-  const fileMap = new Map();
-  for (const f of files) {
-    fileMap.set(f.name.toLowerCase().replace(/^\.\//, ''), f);
-  }
-  loadingManager.setURLModifier((url) => {
-    const clean = url.split('?')[0].split('#')[0].toLowerCase().replace(/^\.\//, '');
-    let candidate = fileMap.get(clean);
-    if (candidate) return URL.createObjectURL(candidate);
-    const last = clean.substring(clean.lastIndexOf('/') + 1);
-    candidate = fileMap.get(last);
-    if (candidate) return URL.createObjectURL(candidate);
-    return url;
-  });
-  return () => {
-    loadingManager.setURLModifier(null);
-  };
-}
-
-function handleFiles(fileList) {
-  const files = Array.from(fileList);
-  // Prefer GLB when present
-  const glb = files.find(f => f.name.toLowerCase().endsWith('.glb'));
-  if (glb) {
-    const url = URL.createObjectURL(glb);
-    loader.load(url, (gltf) => {
-      setModelFromGLTF(gltf);
-      URL.revokeObjectURL(url);
-    }, undefined, (err) => {
-      console.error('Failed to load GLB:', err);
-      const details = err && (err.message || err.status || err.code) ? String(err.message || err.status || err.code) : 'Unknown error';
-      const html = 'The selected <code>.glb</code> file could not be loaded.<br><br>' +
-        `File: <code>${glb.name}</code><br>` +
-        `Details: <code>${details}</code>`;
-      showLoadError('GLB Load Failed', html);
-      URL.revokeObjectURL(url);
-    });
-    return;
-  }
-
-
-  // Otherwise, try GLTF + its dependencies from the same selection
-  const gltfFile = files.find(f => f.name.toLowerCase().endsWith('.gltf'));
-  if (gltfFile) {
-    const cleanup = makeFileResolver(files);
-    const url = URL.createObjectURL(gltfFile);
-    loader.load(url, (gltf) => {
-      setModelFromGLTF(gltf);
-      URL.revokeObjectURL(url);
-      cleanup();
-    }, undefined, (err) => {
-      console.error('Failed to load GLTF:', err);
-      const details = err && (err.message || err.status || err.code) ? String(err.message || err.status || err.code) : 'Unknown error';
-      const html = 'The selected <code>.gltf</code> could not be loaded.<br><br>' +
-        `File: <code>${gltfFile.name}</code><br>` +
-        'Ensure you selected the <code>.gltf</code> along with its <code>.bin</code> and textures (PNG/JPG/KTX2).<br>' +
-        `Details: <code>${details}</code>`;
-      showLoadError('GLTF Load Failed', html);
-      URL.revokeObjectURL(url);
-      cleanup();
-    });
-    return;
-  }
-
-  // Not a loader error; keep a simple notice, but use SweetAlert if available
-  showLoadError('Selection Incomplete', 'Please select a <code>.glb</code>, or a <code>.gltf</code> together with its <code>.bin</code> and textures.');
-}
-
-function doExportSTL() {
-  // Export the exportGroup (model + base), robustly handling STLExporter outputs
-  const exporter = new STLExporter();
-
-  // Ensure we have something exportable
-  let hasMesh = false;
-  exportGroup.traverse((o) => {
-    if (o.isMesh && o.geometry) hasMesh = true;
-  });
-  if (!hasMesh) {
-    alert('Nothing to export: no meshes found.');
-    return;
-  }
-
-  // Prepare a target group for export. Rotate to Z-up if requested, without affecting the scene.
-  let target = exportGroup;
-  if (EXPORT_Z_UP) {
-    // Deep clone transforms/graph; geometries/materials are shared (fine for export)
-    target = exportGroup.clone(true);
-    // Reset clone world matrices to match current scene
-    exportGroup.updateMatrixWorld(true);
-    target.updateMatrixWorld(true);
-    // Apply Y-up (Three.js) -> Z-up (slicers) conversion: rotate +90° around X (Y -> Z)
-    target.rotation.x = (target.rotation.x || 0) + Math.PI / 2;
-    target.updateMatrixWorld(true);
-  } else {
-    // Make sure matrices are up to date if no clone is used
-    exportGroup.updateMatrixWorld(true);
-  }
-
-  const toBlob = (res, isBinary) => {
-    if (!res) return null;
-    const binType = 'application/vnd.ms-pki.stl';
-    if (res instanceof ArrayBuffer) return new Blob([res], { type: binType });
-    if (ArrayBuffer.isView(res)) return new Blob([res.buffer], { type: binType });
-    if (typeof res === 'string') return new Blob([res], { type: 'text/plain' });
-    return null;
-  };
-
-  let blob = null;
-  let filename = 'figure_with_base.stl';
-
-  // Try binary first
-  let result;
-  try {
-    result = exporter.parse(target, { binary: true });
-    blob = toBlob(result, true);
-  } catch (e) {
-    console.warn('Binary STL export threw an error, will try ASCII next:', e);
-  }
-
-  // Fallback to ASCII if needed
-  if (!blob) {
-    try {
-      const ascii = exporter.parse(target, { binary: false });
-      blob = toBlob(ascii, false);
-      filename = 'figure_with_base_ascii.stl';
-      if (!blob) {
-        console.error('Unexpected STL export result type in ASCII mode:', ascii && ascii.constructor && ascii.constructor.name);
-        alert('Export failed: Unexpected result from STL exporter (ASCII). See console for details.');
-        return;
-      }
-    } catch (e) {
-      console.error('ASCII STL export failed:', e);
-      alert('Export failed: STL exporter error. See console for details.');
-      return;
+    // Build a resolver that maps dependency URLs in a .gltf to user-selected Files
+    function makeFileResolver(files) {
+        const fileMap = new Map();
+        for (const f of files) {
+            fileMap.set(f.name.toLowerCase().replace(/^\.\//, ''), f);
+        }
+        loadingManager.setURLModifier((url) => {
+            const clean = url.split('?')[0].split('#')[0].toLowerCase().replace(/^\.\//, '');
+            let candidate = fileMap.get(clean);
+            if (candidate) return URL.createObjectURL(candidate);
+            const last = clean.substring(clean.lastIndexOf('/') + 1);
+            candidate = fileMap.get(last);
+            if (candidate) return URL.createObjectURL(candidate);
+            return url;
+        });
+        return () => {
+            loadingManager.setURLModifier(null);
+        };
     }
-  }
 
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
+    function handleFiles(fileList) {
+        const files = Array.from(fileList);
+        // Prefer GLB when present
+        const glb = files.find(f => f.name.toLowerCase().endsWith('.glb'));
+        if (glb) {
+            const url = URL.createObjectURL(glb);
+            loader.load(url, (gltf) => {
+                setModelFromGLTF(gltf);
+                URL.revokeObjectURL(url);
+            }, undefined, (err) => {
+                console.error('Failed to load GLB:', err);
+                const details = err && (err.message || err.status || err.code) ? String(err.message || err.status || err.code) : 'Unknown error';
+                const html = 'The selected <code>.glb</code> file could not be loaded.<br><br>' +
+                    `File: <code>${glb.name}</code><br>` +
+                    `Details: <code>${details}</code>`;
+                showLoadError('GLB Load Failed', html);
+                URL.revokeObjectURL(url);
+            });
+            return;
+        }
 
-// UI handlers
-// D&D and figurine size selectors
-function syncFromSelectors() {
-  const dnd = dndSizeSelect.value;
-  const fig = figurineSizeSelect.value;
-  updateDndDesc(dnd);
-  updatePresetUI(fig);
-  applyPresetToModel(dnd, fig);
-}
 
-dndSizeSelect.addEventListener('change', () => {
-      // Nudge height within the current figurine size based on D&D size
-      const dnd = dndSizeSelect.value;
-      const fig = figurineSizeSelect.value;
-      updateDndDesc(dnd);
-      // Also reset base radius to the recommended value for the current figurine size
-      updatePresetUI(fig);
-      applyPresetToModel(dnd, fig);
+        // Otherwise, try GLTF + its dependencies from the same selection
+        const gltfFile = files.find(f => f.name.toLowerCase().endsWith('.gltf'));
+        if (gltfFile) {
+            const cleanup = makeFileResolver(files);
+            const url = URL.createObjectURL(gltfFile);
+            loader.load(url, (gltf) => {
+                setModelFromGLTF(gltf);
+                URL.revokeObjectURL(url);
+                cleanup();
+            }, undefined, (err) => {
+                console.error('Failed to load GLTF:', err);
+                const details = err && (err.message || err.status || err.code) ? String(err.message || err.status || err.code) : 'Unknown error';
+                const html = 'The selected <code>.gltf</code> could not be loaded.<br><br>' +
+                    `File: <code>${gltfFile.name}</code><br>` +
+                    'Ensure you selected the <code>.gltf</code> along with its <code>.bin</code> and textures (PNG/JPG/KTX2).<br>' +
+                    `Details: <code>${details}</code>`;
+                showLoadError('GLTF Load Failed', html);
+                URL.revokeObjectURL(url);
+                cleanup();
+            });
+            return;
+        }
+
+        // Not a loader error; keep a simple notice, but use SweetAlert if available
+        showLoadError('Selection Incomplete', 'Please select a <code>.glb</code>, or a <code>.gltf</code> together with its <code>.bin</code> and textures.');
+    }
+
+    function doExportSTL() {
+        // Export the exportGroup (model + base), robustly handling STLExporter outputs
+        const exporter = new STLExporter();
+
+        // Ensure we have something exportable
+        let hasMesh = false;
+        exportGroup.traverse((o) => {
+            if (o.isMesh && o.geometry) hasMesh = true;
+        });
+        if (!hasMesh) {
+            alert('Nothing to export: no meshes found.');
+            return;
+        }
+
+        // Prepare a target group for export. Rotate to Z-up if requested, without affecting the scene.
+        let target = exportGroup;
+        if (EXPORT_Z_UP) {
+            // Deep clone transforms/graph; geometries/materials are shared (fine for export)
+            target = exportGroup.clone(true);
+            // Reset clone world matrices to match current scene
+            exportGroup.updateMatrixWorld(true);
+            target.updateMatrixWorld(true);
+            // Apply Y-up (Three.js) -> Z-up (slicers) conversion: rotate +90° around X (Y -> Z)
+            target.rotation.x = (target.rotation.x || 0) + Math.PI / 2;
+            target.updateMatrixWorld(true);
+        } else {
+            // Make sure matrices are up to date if no clone is used
+            exportGroup.updateMatrixWorld(true);
+        }
+
+        const toBlob = (res, isBinary) => {
+            if (!res) return null;
+            const binType = 'application/vnd.ms-pki.stl';
+            if (res instanceof ArrayBuffer) return new Blob([res], {type: binType});
+            if (ArrayBuffer.isView(res)) return new Blob([res.buffer], {type: binType});
+            if (typeof res === 'string') return new Blob([res], {type: 'text/plain'});
+            return null;
+        };
+
+        let blob = null;
+        let filename = 'figure_with_base.stl';
+
+        // Try binary first
+        let result;
+        try {
+            result = exporter.parse(target, {binary: true});
+            blob = toBlob(result, true);
+        } catch (e) {
+            console.warn('Binary STL export threw an error, will try ASCII next:', e);
+        }
+
+        // Fallback to ASCII if needed
+        if (!blob) {
+            try {
+                const ascii = exporter.parse(target, {binary: false});
+                blob = toBlob(ascii, false);
+                filename = 'figure_with_base_ascii.stl';
+                if (!blob) {
+                    console.error('Unexpected STL export result type in ASCII mode:', ascii && ascii.constructor && ascii.constructor.name);
+                    alert('Export failed: Unexpected result from STL exporter (ASCII). See console for details.');
+                    return;
+                }
+            } catch (e) {
+                console.error('ASCII STL export failed:', e);
+                alert('Export failed: STL exporter error. See console for details.');
+                return;
+            }
+        }
+
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(link.href);
+    }
+
+    // UI handlers
+    // D&D and figurine size selectors
+    function syncFromSelectors() {
+        const dnd = dndSizeSelect.value;
+        const fig = figurineSizeSelect.value;
+        updateDndDesc(dnd);
+        updatePresetUI(fig);
+        applyPresetToModel(dnd, fig);
+    }
+
+    dndSizeSelect.addEventListener('change', () => {
+        // Nudge height within the current figurine size based on D&D size
+        const dnd = dndSizeSelect.value;
+        const fig = figurineSizeSelect.value;
+        updateDndDesc(dnd);
+        // Also reset base radius to the recommended value for the current figurine size
+        updatePresetUI(fig);
+        applyPresetToModel(dnd, fig);
     });
 
-figurineSizeSelect.addEventListener('change', () => {
-  syncFromSelectors();
-});
-baseRadiusSlider.addEventListener('input', () => {
-  const diameterCm = Number(baseRadiusSlider.value);
-  baseRadiusValue.textContent = formatRadiusLabel(diameterCm);
-  const radiusMM = diameterCm * 5; // diameter(cm) -> radius(mm)
-  createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
-  // Optionally keep camera focus at center
-});
+    figurineSizeSelect.addEventListener('change', () => {
+        syncFromSelectors();
+    });
+    baseRadiusSlider.addEventListener('input', () => {
+        const diameterCm = Number(baseRadiusSlider.value);
+        baseRadiusValue.textContent = formatRadiusLabel(diameterCm);
+        const radiusMM = diameterCm * 5; // diameter(cm) -> radius(mm)
+        createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
+        // Optionally keep camera focus at center
+    });
 
-baseHeightInput.addEventListener('change', () => {
-  const diameterCm = Number(baseRadiusSlider.value);
-  const radiusMM = diameterCm * 5; // diameter(cm) -> radius(mm)
-  createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
-});
+    baseHeightInput.addEventListener('change', () => {
+        const diameterCm = Number(baseRadiusSlider.value);
+        const radiusMM = diameterCm * 5; // diameter(cm) -> radius(mm)
+        createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
+    });
 
-baseShapeSelect.addEventListener('change', () => {
-  const diameterCm = Number(baseRadiusSlider.value);
-  const radiusMM = diameterCm * 5; // diameter(cm) -> radius(mm)
-  createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
-});
+    baseShapeSelect.addEventListener('change', () => {
+        const diameterCm = Number(baseRadiusSlider.value);
+        const radiusMM = diameterCm * 5; // diameter(cm) -> radius(mm)
+        createOrUpdateBase(radiusMM, Number(baseHeightInput.value));
+    });
 
-fileInput.addEventListener('change', (e) => {
-  const fl = e.target.files;
-  if (fl && fl.length > 0) handleFiles(fl);
-});
+    fileInput.addEventListener('change', (e) => {
+        const fl = e.target.files;
+        if (fl && fl.length > 0) handleFiles(fl);
+    });
 
-resetViewBtn.addEventListener('click', () => {
-  // If a model is present, center on it; otherwise restore a neutral default view
-  if (modelGroup.children && modelGroup.children.length > 0) {
-    fitCameraToModel(modelGroup);
-  } else {
-    camera.position.set(120, 100, 160);
-    controls.target.set(0, 0, 0);
-    controls.update();
-  }
-});
+    resetViewBtn.addEventListener('click', () => {
+        // If a model is present, center on it; otherwise restore a neutral default view
+        if (modelGroup.children && modelGroup.children.length > 0) {
+            fitCameraToModel(modelGroup);
+        } else {
+            camera.position.set(120, 100, 160);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        }
+    });
 
-exportBtn.addEventListener('click', () => {
-  doExportSTL();
-});
+    exportBtn.addEventListener('click', () => {
+        doExportSTL();
+    });
 
-// Drag and drop (optional convenience)
-window.addEventListener('dragover', (e) => {
-  e.preventDefault();
-});
-window.addEventListener('drop', (e) => {
-  e.preventDefault();
-  const fl = e.dataTransfer?.files;
-  if (fl && fl.length > 0) handleFiles(fl);
-});
+    // Drag and drop (optional convenience)
+    window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+    });
+    window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const fl = e.dataTransfer?.files;
+        if (fl && fl.length > 0) handleFiles(fl);
+    });
 
-// Animation loop
-function animate() {
-  requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene, camera);
-}
+    // Animation loop
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+    }
 
-// Initial setup
-function init() {
-  resizeRenderer();
+    // Initial setup
+    function init() {
+        resizeRenderer();
 
-  // Sync UI with defaults
-  figurineSizeSelect.value = figurineSizeSelect.value || 'Medium';
-  dndSizeSelect.value = dndSizeSelect.value || 'Medium';
-  updateDndDesc(dndSizeSelect.value);
-  updatePresetUI(figurineSizeSelect.value);
-  applyPresetToModel(dndSizeSelect.value, figurineSizeSelect.value);
+        // Sync UI with defaults
+        figurineSizeSelect.value = figurineSizeSelect.value || 'Medium';
+        dndSizeSelect.value = dndSizeSelect.value || 'Medium';
+        updateDndDesc(dndSizeSelect.value);
+        updatePresetUI(figurineSizeSelect.value);
+        applyPresetToModel(dndSizeSelect.value, figurineSizeSelect.value);
 
-  // Create base with current diameter(cm) converted to radius(mm)
-  const initDiameterCm = Number(baseRadiusSlider.value);
-  const initRadiusMM = initDiameterCm * 5; // diameter(cm) -> radius(mm)
-  createOrUpdateBase(initRadiusMM, Number(baseHeightInput.value));
+        // Create base with current diameter(cm) converted to radius(mm)
+        const initDiameterCm = Number(baseRadiusSlider.value);
+        const initRadiusMM = initDiameterCm * 5; // diameter(cm) -> radius(mm)
+        createOrUpdateBase(initRadiusMM, Number(baseHeightInput.value));
 
-  // Show floating 3D prompt instead of loading a default model
-  showPlaceholderText();
-  animate();
-}
+        // Show floating 3D prompt instead of loading a default model
+        showPlaceholderText();
+        animate();
+    }
 
-init();
-  </script>
+    init();
+</script>
+<!-- Bootstrap 5 JS bundle -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+        crossorigin="anonymous"></script>
 </body>
 </html>
