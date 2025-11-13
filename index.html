@@ -897,12 +897,6 @@ window.addEventListener('drop', (e) => {
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
-  // Gentle bobbing/rotation for placeholder text
-  if (placeholderGroup) {
-    const t = performance.now() * 0.001;
-    placeholderGroup.position.y = 30 + Math.sin(t * 1.5) * 3;
-    placeholderGroup.rotation.y += 0.01;
-  }
   renderer.render(scene, camera);
 }
 
