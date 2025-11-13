@@ -6,6 +6,8 @@
   <title>Figurinify — Base & STL Exporter</title>
   <link rel="stylesheet" href="style.css" />
   <meta name="theme-color" content="#111" />
+  <!-- SweetAlert2 (CDN) for friendly error dialogs -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
   <div id="app">
@@ -82,6 +84,8 @@ import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/cont
 import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
 import { STLExporter } from 'https://unpkg.com/three@0.160.0/examples/jsm/exporters/STLExporter.js';
 import * as BufferGeometryUtils from 'https://unpkg.com/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js';
+import { FontLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/FontLoader.js';
+import { TextGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/TextGeometry.js';
 
 // DOM elements
 const viewportEl = document.getElementById('viewport');
@@ -307,6 +311,7 @@ modelGroup.name = 'ModelGroup';
 exportGroup.add(modelGroup);
 
 let baseMesh = null;
+let placeholderGroup = null; // floating "load your model" text (not exported)
 
 // Overlap amount: sink model slightly into the base to ensure stability in prints
 const MODEL_BASE_OVERLAP_MM = 0.5;
@@ -319,6 +324,31 @@ const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x777777, metalness
 // Loading Manager + GLTF Loader
 const loadingManager = new THREE.LoadingManager();
 const loader = new GLTFLoader(loadingManager);
+
+// SweetAlert2 helper — show model loading errors in a friendly way
+function showLoadError(title, infoHtml) {
+  if (typeof Swal !== 'undefined' && Swal && typeof Swal.fire === 'function') {
+    Swal.fire({
+      icon: 'error',
+      title: title || 'Model Load Error',
+      html: infoHtml || 'Something went wrong while loading the model.',
+      confirmButtonText: 'OK'
+    });
+  } else {
+    // Fallback if SweetAlert2 couldn't load
+    alert((title ? title + ': ' : '') + (infoHtml ? infoHtml.replace(/<[^>]*>/g, '') : 'Model load failed.'));
+  }
+}
+
+// Report resource-level errors (e.g., missing .bin/texture during gltf load)
+loadingManager.onError = (url) => {
+  const msg = `A required resource failed to load.<br><code>${url}</code><br><br>` +
+    'Tips:<ul style="text-align:left;">' +
+    '<li>If you opened this page with file://, run a local server to avoid CORS issues.</li>' +
+    '<li>For .gltf, be sure to select the .gltf, its .bin, and any textures together.</li>' +
+    '</ul>';
+  showLoadError('Model Resource Error', msg);
+};
 
 function resizeRenderer() {
   const rect = viewportEl.getBoundingClientRect();
@@ -487,13 +517,48 @@ function fitCameraToObject(object, padding = 20) {
   controls.update();
 }
 
-async function loadDefaultModel() {
-  try {
-    const gltf = await loader.loadAsync('model/scene.gltf');
-    setModelFromGLTF(gltf);
-  } catch (e) {
-    console.warn('Could not load default model from model/scene.gltf. If you opened this page via file://, browsers block fetching local files for security (CORS). Start a local server and open http://localhost/... or use the file picker to load a .glb.', e);
-  }
+// Placeholder 3D text shown until a model is loaded
+function showPlaceholderText() {
+  if (placeholderGroup) return; // already visible
+  const fontLoader = new FontLoader();
+  const fontUrl = 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json';
+  fontLoader.load(fontUrl, (font) => {
+    const geom = new TextGeometry('load your model', {
+      font,
+      size: 16, // mm
+      height: 2,
+      curveSegments: 12,
+      bevelEnabled: false
+    });
+    geom.center();
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffcc66, metalness: 0.1, roughness: 0.6, emissive: 0x221100, emissiveIntensity: 0.2 });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = false;
+
+    placeholderGroup = new THREE.Group();
+    placeholderGroup.add(mesh);
+    placeholderGroup.position.set(0, 30, 0); // float above base top (y=0)
+    scene.add(placeholderGroup);
+  }, (xhr) => {}, (err) => {
+    console.warn('Failed to load placeholder font:', err);
+  });
+}
+
+function hidePlaceholderText() {
+  if (!placeholderGroup) return;
+  placeholderGroup.traverse((o) => {
+    if (o.isMesh) {
+      o.geometry && o.geometry.dispose();
+      if (Array.isArray(o.material)) {
+        o.material.forEach(m => m && m.dispose && m.dispose());
+      } else if (o.material) {
+        o.material.dispose && o.material.dispose();
+      }
+    }
+  });
+  scene.remove(placeholderGroup);
+  placeholderGroup = null;
 }
 
 function clearGroup(group) {
@@ -518,6 +583,9 @@ function enableShadows(object, cast = true, receive = true) {
       const root = gltf.scene || gltf.scenes?.[0];
       modelGroup.add(root);
       enableShadows(root, true, true);
+
+      // Remove placeholder text when a real model is present
+      hidePlaceholderText();
 
       // Apply presets for base and model
       const dnd = dndSizeSelect.value;
@@ -574,6 +642,11 @@ function handleFiles(fileList) {
       URL.revokeObjectURL(url);
     }, undefined, (err) => {
       console.error('Failed to load GLB:', err);
+      const details = err && (err.message || err.status || err.code) ? String(err.message || err.status || err.code) : 'Unknown error';
+      const html = 'The selected <code>.glb</code> file could not be loaded.<br><br>' +
+        `File: <code>${glb.name}</code><br>` +
+        `Details: <code>${details}</code>`;
+      showLoadError('GLB Load Failed', html);
       URL.revokeObjectURL(url);
     });
     return;
@@ -591,13 +664,20 @@ function handleFiles(fileList) {
       cleanup();
     }, undefined, (err) => {
       console.error('Failed to load GLTF:', err);
+      const details = err && (err.message || err.status || err.code) ? String(err.message || err.status || err.code) : 'Unknown error';
+      const html = 'The selected <code>.gltf</code> could not be loaded.<br><br>' +
+        `File: <code>${gltfFile.name}</code><br>` +
+        'Ensure you selected the <code>.gltf</code> along with its <code>.bin</code> and textures (PNG/JPG/KTX2).<br>' +
+        `Details: <code>${details}</code>`;
+      showLoadError('GLTF Load Failed', html);
       URL.revokeObjectURL(url);
       cleanup();
     });
     return;
   }
 
-  alert('Please select a .glb, or a .gltf together with its .bin and textures.');
+  // Not a loader error; keep a simple notice, but use SweetAlert if available
+  showLoadError('Selection Incomplete', 'Please select a <code>.glb</code>, or a <code>.gltf</code> together with its <code>.bin</code> and textures.');
 }
 
 function doExportSTL() {
@@ -746,6 +826,12 @@ window.addEventListener('drop', (e) => {
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
+  // Gentle bobbing/rotation for placeholder text
+  if (placeholderGroup) {
+    const t = performance.now() * 0.001;
+    placeholderGroup.position.y = 30 + Math.sin(t * 1.5) * 3;
+    placeholderGroup.rotation.y += 0.01;
+  }
   renderer.render(scene, camera);
 }
 
@@ -765,8 +851,8 @@ function init() {
   const initRadiusMM = initDiameterCm * 5; // diameter(cm) -> radius(mm)
   createOrUpdateBase(initRadiusMM, Number(baseHeightInput.value));
 
-  // Load default showcase model
-  loadDefaultModel();
+  // Show floating 3D prompt instead of loading a default model
+  showPlaceholderText();
   animate();
 }
 
