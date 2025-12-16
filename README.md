@@ -24,6 +24,36 @@ Live site: https://andytwoods.github.io/Figurinify/
 - Load your character model (`.glb` preferred; `.gltf` supported with its `.bin` and textures).
 - Export STL when happy with size and base.
 
+## Meshy GLB Downloader
+
+`meshy_glb_downloader.py` is a standalone utility for downloading 3D models from Meshy.ai.
+
+### Building the executable
+
+**Windows:**
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install textual requests pyinstaller
+
+pyinstaller --noconfirm --clean --onefile --console --name "meshy-glb-downloader" main.py
+
+deactivate
+```
+
+**macOS:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install textual requests pyinstaller
+
+pyinstaller --noconfirm --clean --onefile --windowed --name "Meshy GLB Downloader" main.py
+
+deactivate
+```
+
 ## Notes
 - Three.js and helpers are loaded from unpkg CDN.
 

@@ -516,6 +516,49 @@
 
     // --- Application Logic ---
 
+    // Helper: parse query string
+    function getQueryParams() {
+      const params = new URLSearchParams(window.location.search);
+      const obj = {};
+      for (const [k, v] of params.entries()) obj[k] = v;
+      return obj;
+    }
+
+    // Load a local file (via fetch) from a provided file URL or path
+    async function loadDetectedModel(urlOrPath) {
+      try {
+        // If an absolute URL (http/https or blob), try to load directly
+        const isAbs = /^https?:\/\//i.test(urlOrPath) || urlOrPath.startsWith('blob:');
+        let src = urlOrPath;
+        if (!isAbs) {
+          // Treat as relative path from the page origin (cannot read local disk paths)
+          // Users should serve the folder or pass a reachable URL (file URLs are blocked by browsers)
+          const base = window.location.origin + window.location.pathname.replace(/[^\/]*$/, '');
+          src = new URL(urlOrPath, base).toString();
+        }
+        const gltf = await loader.loadAsync(src);
+        addCharacterFromGLTF(gltf);
+        return true;
+      } catch (e) {
+        console.warn('Auto-load failed:', e);
+        return false;
+      }
+    }
+
+    function addAutoLoadButton(label, action) {
+      try {
+        const toolbar = document.getElementById('toolbar');
+        const sec = document.createElement('div');
+        sec.className = 'section';
+        const btn = document.createElement('button');
+        btn.className = 'primary';
+        btn.textContent = label;
+        btn.addEventListener('click', action);
+        sec.appendChild(btn);
+        toolbar.appendChild(sec);
+      } catch (_) { /* non-critical */ }
+    }
+
     function showPlaceholderText() {
       if (placeholderGroup) return; // already visible
       const fontLoader = new FontLoader();
@@ -977,13 +1020,28 @@
 
       showPlaceholderText();
 
-      // Load default model
-      try {
-        const gltf = await loader.loadAsync('model/scene.gltf');
-        addCharacterFromGLTF(gltf);
-      } catch (e) {
-        console.warn('Could not load default model:', e);
-        // If default model fails, placeholder text remains visible
+      // URL parameter integration: modelUrl
+      // Usage: .../index.html?modelUrl=https%3A%2F%2Fexample.com%2Fpath%2Fmodel.glb
+      // Note: Browsers cannot read arbitrary local disk paths due to security; serve the file or use a reachable URL.
+      const qp = getQueryParams();
+      if (qp.modelUrl) {
+        const decoded = decodeURIComponent(qp.modelUrl);
+        // Offer a one-click button to load the detected model
+        addAutoLoadButton('Load detected model', async () => {
+          const ok = await loadDetectedModel(decoded);
+          if (!ok) alert('Failed to load detected model. Ensure the URL is reachable from the browser.');
+        });
+      }
+
+      // Load default model unless a modelUrl param is provided
+      if (!getQueryParams().modelUrl) {
+        try {
+          const gltf = await loader.loadAsync('model/scene.gltf');
+          addCharacterFromGLTF(gltf);
+        } catch (e) {
+          console.warn('Could not load default model:', e);
+          // If default model fails, placeholder text remains visible
+        }
       }
 
       animate();
