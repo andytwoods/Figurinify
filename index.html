@@ -1,0 +1,998 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Figurinify — Base & STL Exporter</title>
+  <link rel="stylesheet" href="style.css" />
+  <meta name="theme-color" content="#111" />
+</head>
+
+<body>
+  <div id="app">
+    <div id="toolbar">
+      <div class="section">
+        <label for="dndSizeSelect">D&D size (real-life)</label>
+        <select id="dndSizeSelect">
+          <option>Small</option>
+          <option selected>Medium</option>
+          <option>Large</option>
+        </select>
+        <div class="note"><small id="dndSizeDesc"></small></div>
+      </div>
+      <div class="section">
+        <label for="figurineSizeSelect">Figurine size to print</label>
+        <select id="figurineSizeSelect">
+          <option>Small</option>
+          <option selected>Medium</option>
+          <option>Large</option>
+        </select>
+        <div class="note">
+          <span>Recommended height (cm): <strong id="recHeightCm">3.2–3.8</strong></span><br />
+          <span>Recommended base diameter (cm): <strong id="recBaseCm">2.5</strong></span>
+        </div>
+      </div>
+
+      <div class="section">
+        <label for="baseRadius">Base diameter (cm)</label>
+        <input id="baseRadius" type="range" min="1" max="16" step="0.5" value="2.5" />
+        <span id="baseRadiusValue">2.5</span>
+        <div class="note"><small id="baseRadiusDesc"></small></div>
+      </div>
+      <div class="section">
+        <label for="baseHeight">Base height (mm)</label>
+        <input id="baseHeight" type="number" min="1" max="20" step="0.5" value="3" />
+      </div>
+      <div class="section">
+        <label for="baseShapeSelect">Base shape</label>
+        <select id="baseShapeSelect">
+          <option value="flat" selected>Flat (cylinder)</option>
+          <option value="rounded">Rounded edge</option>
+          <option value="chamfer">Chamfered edge</option>
+          <option value="dome">Shallow dome</option>
+        </select>
+        <div class="note"><small id="baseShapeDesc">Choose a basic base profile. Shapes keep the top at y = 0 for
+            consistent alignment and export.</small></div>
+      </div>
+      <div class="section">
+        <label for="fileInput">Load model (.glb recommended; for .gltf select the .gltf, .bin, and textures)</label>
+        <input id="fileInput" type="file" accept=".glb,.gltf,.bin,.png,.jpg,.jpeg,.ktx2" multiple />
+      </div>
+      <div class="section row">
+        <button id="resetView">Reset View</button>
+        <button id="exportSTL" class="primary">Export STL</button>
+      </div>
+    </div>
+    <div id="viewport"></div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    // Figurinify — load GLTF, add adjustable base, set target height, export STL
+    // Uses Three.js from CDN (ES modules). For best results, open via a local server.
+
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+    import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+    import { STLExporter } from 'https://unpkg.com/three@0.160.0/examples/jsm/exporters/STLExporter.js';
+    import * as BufferGeometryUtils from 'https://unpkg.com/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js';
+    import { DRACOLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/DRACOLoader.js';
+    import { KTX2Loader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/KTX2Loader.js';
+    import { MeshoptDecoder } from 'https://unpkg.com/three@0.160.0/examples/jsm/libs/meshopt_decoder.module.js';
+    import { FontLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/FontLoader.js';
+    import { TextGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/TextGeometry.js';
+
+    // DOM elements
+    const viewportEl = document.getElementById('viewport');
+    const baseRadiusSlider = document.getElementById('baseRadius');
+    const baseRadiusValue = document.getElementById('baseRadiusValue');
+    const baseRadiusDesc = document.getElementById('baseRadiusDesc');
+    const baseHeightInput = document.getElementById('baseHeight');
+    const fileInput = document.getElementById('fileInput');
+    const exportBtn = document.getElementById('exportSTL');
+    const resetViewBtn = document.getElementById('resetView');
+    const baseShapeSelect = document.getElementById('baseShapeSelect');
+    const baseShapeDesc = document.getElementById('baseShapeDesc');
+
+    // New UI elements for D&D size and figurine size presets
+    const dndSizeSelect = document.getElementById('dndSizeSelect');
+    const dndSizeDesc = document.getElementById('dndSizeDesc');
+    const figurineSizeSelect = document.getElementById('figurineSizeSelect');
+    const recHeightCmEl = document.getElementById('recHeightCm');
+    const recBaseCmEl = document.getElementById('recBaseCm');
+
+    // Data derived from provided JSON
+    const dndSizes = {
+      Small: {
+        description: 'Represents creatures such as halflings or gnomes.',
+        height_range_cm: '90–120',
+        example_creatures: ['Halfling', 'Gnome']
+      },
+      Medium: {
+        description: 'Represents most humanoids such as humans, elves, orcs, etc.',
+        height_range_cm: '120–240',
+        example_creatures: ['Human', 'Elf', 'Orc']
+      },
+      Large: {
+        description: 'Represents ogres, trolls, and similar large beings.',
+        height_range_cm: '240–480',
+        example_creatures: ['Ogre', 'Troll', 'Horse']
+      }
+    };
+
+    const heroforgePrintSizes = {
+      Small: {
+        description: 'Scaled for small creatures like gnomes and halflings.',
+        standard_miniature: {
+          height_range_cm: '2.3–2.8',
+          base_diameter_cm: 2.5,
+          base_radius_mm: 12.5
+        },
+        statuette_2x_scale: {
+          height_range_cm: '4.6–5.6',
+          base_diameter_cm: 5.0,
+          base_radius_mm: 25
+        },
+        stl_custom_scale: {
+          scalable: true,
+          recommended_range_cm: '2.0–10.0',
+          notes: 'STL files can be scaled manually in slicing software for home printing.'
+        }
+      },
+      Medium: {
+        description: 'Standard humanoid HeroForge miniature scale (roughly 30–32 mm scale).',
+        standard_miniature: {
+          height_range_cm: '3.2–3.8',
+          base_diameter_cm: 2.5,
+          base_radius_mm: 12.5
+        },
+        statuette_2x_scale: {
+          height_range_cm: '6.4–7.6',
+          base_diameter_cm: 5.0,
+          base_radius_mm: 25
+        },
+        stl_custom_scale: {
+          scalable: true,
+          recommended_range_cm: '3.0–15.0',
+          notes: 'STL files can be printed at custom scales or for display models.'
+        }
+      },
+      Large: {
+        description: 'Used for ogres, trolls, mounts, and other large creatures.',
+        standard_miniature: {
+          height_range_cm: '5.5–7.0',
+          base_diameter_cm: 5.0,
+          base_radius_mm: 25
+        },
+        statuette_2x_scale: {
+          height_range_cm: '11.0–14.0',
+          base_diameter_cm: 10.0,
+          base_radius_mm: 50
+        },
+        stl_custom_scale: {
+          scalable: true,
+          recommended_range_cm: '6.0–25.0',
+          notes: "Physical HeroForge prints can be upscaled through their 'Refined XL' options or scaled manually if printed at home."
+        }
+      }
+    };
+
+    // --- Helper Functions ---
+
+    function parseRangeCm(rangeStr) {
+      const parts = rangeStr.replace(/\s/g, '').split(/[–-]/);
+      if (parts.length !== 2) return null;
+      const min = parseFloat(parts[0]);
+      const max = parseFloat(parts[1]);
+      if (!isFinite(min) || !isFinite(max)) return null;
+      return [min, max];
+    }
+
+    function chooseFromRange([min, max], bias) {
+      if (!isFinite(min) || !isFinite(max)) return null;
+      switch (bias) {
+        case 'low': return min;
+        case 'high': return max;
+        default: return (min + max) / 2;
+      }
+    }
+
+    function updateDndDesc(sizeKey) {
+      const s = dndSizes[sizeKey];
+      if (!s) { dndSizeDesc.textContent = ''; return; }
+      dndSizeDesc.textContent = `${s.description} Height: ${s.height_range_cm} cm. Examples: ${s.example_creatures.join(', ')}`;
+    }
+
+    function formatRadiusLabel(r) {
+      return (r % 1 === 0) ? String(r) : r.toFixed(1);
+    }
+
+    function setBaseRadiusUI(rMm) {
+      const minR = Number(baseRadiusSlider.min);
+      const maxR = Number(baseRadiusSlider.max);
+      const clamped = Math.min(Math.max(rMm, minR), maxR);
+      baseRadiusSlider.value = String(clamped);
+      baseRadiusValue.textContent = formatRadiusLabel(clamped);
+      return clamped;
+    }
+
+    function updatePresetUI(figSizeKey) {
+      const ps = heroforgePrintSizes[figSizeKey];
+      if (!ps) return;
+      const hRange = ps.standard_miniature.height_range_cm;
+      const baseCm = ps.standard_miniature.base_diameter_cm;
+      recHeightCmEl.textContent = hRange;
+      recBaseCmEl.textContent = String(baseCm);
+      baseRadiusDesc.textContent = `Recommended for ${figSizeKey} figurine: ${baseCm} cm diameter`;
+    }
+
+    function computeBBox(object3d) {
+      const box = new THREE.Box3().setFromObject(object3d);
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(center);
+      return { box, size, center };
+    }
+
+    function buildBaseGeometry(radiusMM, heightMM, shape = 'flat') {
+      const radialSeg = 64;
+      const h2 = heightMM / 2;
+      const r = Math.max(0.5, radiusMM);
+      const prof = [];
+
+      const clampFeature = (mm) => Math.max(0.2, Math.min(mm, Math.min(h2, r * 0.5)));
+
+      if (shape === 'flat') {
+        return new THREE.CylinderGeometry(r, r, heightMM, radialSeg);
+      }
+
+      if (shape === 'chamfer') {
+        const c = clampFeature(Math.min(1.0, heightMM * 0.25));
+        prof.push(new THREE.Vector2(r, -h2));
+        prof.push(new THREE.Vector2(r, h2 - c));
+        prof.push(new THREE.Vector2(r - c, h2));
+      } else if (shape === 'rounded') {
+        const f = clampFeature(Math.min(1.5, heightMM * 0.35));
+        prof.push(new THREE.Vector2(r, -h2));
+        prof.push(new THREE.Vector2(r, h2 - f));
+        const segs = 12;
+        for (let i = 1; i <= segs; i++) {
+          const t = i / segs;
+          const theta = (Math.PI / 2) * t;
+          const x = r - f * (1 - Math.cos(theta));
+          const y = (h2 - f) + f * Math.sin(theta);
+          prof.push(new THREE.Vector2(x, y));
+        }
+      } else if (shape === 'dome') {
+        const d = clampFeature(Math.min(2.0, heightMM * 0.5));
+        prof.push(new THREE.Vector2(r, -h2));
+        prof.push(new THREE.Vector2(r, h2 - d));
+        const segs = 16;
+        for (let i = 1; i <= segs; i++) {
+          const t = i / segs;
+          const k = 0.5 - 0.5 * Math.cos(Math.PI * t);
+          const y = (h2 - d) + d * t;
+          const x = r - d * k;
+          prof.push(new THREE.Vector2(x, y));
+        }
+      } else {
+        return new THREE.CylinderGeometry(r, r, heightMM, radialSeg);
+      }
+
+      const latheSegs = radialSeg;
+      const body = new THREE.LatheGeometry(prof, latheSegs);
+      const topRadius = Math.max(0.001, prof[prof.length - 1].x);
+      const bottomRadius = r;
+      const topCap = new THREE.CircleGeometry(topRadius, radialSeg);
+      topCap.rotateX(-Math.PI / 2);
+      topCap.translate(0, h2, 0);
+      const bottomCap = new THREE.CircleGeometry(bottomRadius, radialSeg);
+      bottomCap.rotateX(Math.PI / 2);
+      bottomCap.translate(0, -h2, 0);
+
+      const merged = BufferGeometryUtils.mergeGeometries([body, topCap, bottomCap], true);
+      merged.computeVertexNormals();
+      return merged;
+    }
+
+    // --- Character Class ---
+
+    const MODEL_BASE_OVERLAP_MM = 0.5;
+
+    class Character {
+      constructor(id) {
+        this.id = id;
+        this.group = new THREE.Group(); // Holds model + base
+        this.modelGroup = new THREE.Group(); // Holds just the model
+        this.baseMesh = null;
+
+        this.group.add(this.modelGroup);
+
+        // Default settings
+        this.settings = {
+          dndSize: 'Medium',
+          figurineSize: 'Medium',
+          baseRadiusMM: 12.5, // 2.5cm diameter
+          baseHeightMM: 3,
+          baseShape: 'flat'
+        };
+      }
+
+      setModel(gltfRoot) {
+        // Clear existing model
+        for (let i = this.modelGroup.children.length - 1; i >= 0; i--) {
+          this.modelGroup.remove(this.modelGroup.children[i]);
+        }
+        this.modelGroup.add(gltfRoot);
+        enableShadows(gltfRoot, true, true);
+
+        // Initial setup
+        this.centerModelXZ();
+        this.alignModelOnBase();
+      }
+
+      updateBase() {
+        const { baseRadiusMM, baseHeightMM, baseShape } = this.settings;
+        const geometry = buildBaseGeometry(baseRadiusMM, baseHeightMM, baseShape);
+
+        if (!this.baseMesh) {
+          this.baseMesh = new THREE.Mesh(geometry, baseMaterial);
+          this.baseMesh.receiveShadow = true;
+          this.baseMesh.castShadow = false;
+          this.group.add(this.baseMesh);
+        } else {
+          this.baseMesh.geometry.dispose();
+          this.baseMesh.geometry = geometry;
+        }
+        // Position base so TOP is at y = 0
+        this.baseMesh.position.set(0, -baseHeightMM / 2, 0);
+
+        // Re-align model because base top is always 0, but good to be safe
+        this.alignModelOnBase();
+      }
+
+      alignModelOnBase() {
+        const { box } = computeBBox(this.modelGroup);
+        if (!isFinite(box.min.y) || !isFinite(box.max.y)) return;
+
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        const bottomPointWorld = new THREE.Vector3(center.x, box.min.y, center.z);
+        const bottomPointLocal = this.group.worldToLocal(bottomPointWorld.clone());
+        const diff = -MODEL_BASE_OVERLAP_MM - bottomPointLocal.y;
+
+        this.modelGroup.position.y += diff;
+      }
+
+      centerModelXZ() {
+        const { box, center } = computeBBox(this.modelGroup);
+        if (!isFinite(center.x) || !isFinite(center.z)) return;
+
+        const centerLocal = this.group.worldToLocal(center.clone());
+        const diffX = 0 - centerLocal.x;
+        const diffZ = 0 - centerLocal.z;
+
+        this.modelGroup.position.x += diffX;
+        this.modelGroup.position.z += diffZ;
+      }
+
+      scaleToHeight(targetHeightMM) {
+        const { box } = computeBBox(this.modelGroup);
+        const currentHeight = box.max.y - box.min.y;
+        if (currentHeight <= 0) return;
+        const s = targetHeightMM / currentHeight;
+        this.modelGroup.scale.setScalar(s);
+        this.alignModelOnBase();
+      }
+
+      applyPreset(dndSizeKey, figSizeKey) {
+        this.settings.dndSize = dndSizeKey;
+        this.settings.figurineSize = figSizeKey;
+
+        const ps = heroforgePrintSizes[figSizeKey];
+        if (!ps) return;
+
+        const baseCm = ps.standard_miniature.base_diameter_cm;
+        this.settings.baseRadiusMM = (baseCm * 10) / 2;
+
+        const range = parseRangeCm(ps.standard_miniature.height_range_cm) || [3.0, 4.0];
+        let bias = 'mid';
+        if (dndSizeKey === 'Small') bias = 'low';
+        else if (dndSizeKey === 'Large') bias = 'high';
+        const targetHeightCm = chooseFromRange(range, bias);
+        const targetHeightMm = Math.round(targetHeightCm * 10);
+
+        if (this.modelGroup.children.length > 0) {
+          this.modelGroup.scale.setScalar(1);
+          this.scaleToHeight(targetHeightMm);
+          this.centerModelXZ();
+          this.alignModelOnBase();
+        }
+
+        this.updateBase();
+      }
+    }
+
+    // --- Global State ---
+
+    const characters = [];
+    let selectedCharacter = null;
+    let nextCharId = 1;
+    let placeholderGroup = null;
+
+    // THREE.js essentials
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    viewportEl.appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
+    camera.position.set(120, 100, 160);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    const selectionBox = new THREE.BoxHelper(new THREE.Object3D(), 0xffff00);
+    scene.add(selectionBox);
+
+    // Lights
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    hemi.position.set(0, 1, 0);
+    scene.add(hemi);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(100, 200, 100);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.near = 10;
+    dirLight.shadow.camera.far = 1000;
+    dirLight.shadow.camera.left = -200;
+    dirLight.shadow.camera.right = 200;
+    dirLight.shadow.camera.top = 200;
+    dirLight.shadow.camera.bottom = -200;
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(400, 40, 0x444444, 0x222222);
+    scene.add(grid);
+
+    // Groups
+    const exportGroup = new THREE.Group();
+    scene.add(exportGroup);
+
+    const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.0, roughness: 1.0 });
+
+    // Loading Manager + GLTF Loader
+    const loadingManager = new THREE.LoadingManager();
+    const loader = new GLTFLoader(loadingManager);
+    try {
+      const ktx2 = new KTX2Loader(loadingManager)
+        .setTranscoderPath('https://unpkg.com/three@0.160.0/examples/jsm/libs/basis/')
+        .detectSupport(renderer);
+      loader.setKTX2Loader(ktx2);
+    } catch (e) { console.warn('KTX2 loader setup failed:', e); }
+    try {
+      const draco = new DRACOLoader(loadingManager)
+        .setDecoderPath('https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/');
+      loader.setDRACOLoader(draco);
+    } catch (e) { console.warn('DRACO loader setup failed:', e); }
+    try {
+      if (MeshoptDecoder) loader.setMeshoptDecoder(MeshoptDecoder);
+    } catch (e) { console.warn('Meshopt decoder setup failed:', e); }
+
+    function resizeRenderer() {
+      const rect = viewportEl.getBoundingClientRect();
+      const width = Math.max(200, rect.width);
+      const height = Math.max(200, rect.height);
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', resizeRenderer);
+
+    function enableShadows(object, cast = true, receive = true) {
+      object.traverse((obj) => {
+        if (obj.isMesh) {
+          obj.castShadow = cast;
+          obj.receiveShadow = receive;
+        }
+      });
+    }
+
+    // --- Application Logic ---
+
+    // (URL parameter-based auto-loading removed)
+
+    function showPlaceholderText() {
+      if (placeholderGroup) return; // already visible
+      const fontLoader = new FontLoader();
+      const fontUrl = 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json';
+      fontLoader.load(fontUrl, (font) => {
+        // Check again in case it was loaded while waiting
+        if (placeholderGroup) return;
+
+        const geom = new TextGeometry('load your model', {
+          font,
+          size: 16, // mm
+          height: 2,
+          curveSegments: 12,
+          bevelEnabled: false
+        });
+        geom.center();
+        const mat = new THREE.MeshStandardMaterial({
+          color: 0xffcc66,
+          metalness: 0.1,
+          roughness: 0.6,
+          emissive: 0x221100,
+          emissiveIntensity: 0.2
+        });
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = false;
+
+        placeholderGroup = new THREE.Group();
+        placeholderGroup.add(mesh);
+        placeholderGroup.position.set(0, 30, 0); // float above base top (y=0)
+        scene.add(placeholderGroup);
+      }, (xhr) => {
+      }, (err) => {
+        console.warn('Failed to load placeholder font:', err);
+      });
+    }
+
+    function hidePlaceholderText() {
+      if (placeholderGroup) {
+        scene.remove(placeholderGroup);
+        placeholderGroup = null;
+      }
+    }
+
+    function selectCharacter(char) {
+      selectedCharacter = char;
+
+      if (char) {
+        selectionBox.setFromObject(char.group);
+        selectionBox.visible = true;
+
+        // Update UI to match character settings
+        dndSizeSelect.value = char.settings.dndSize;
+        figurineSizeSelect.value = char.settings.figurineSize;
+        baseHeightInput.value = char.settings.baseHeightMM;
+        baseShapeSelect.value = char.settings.baseShape;
+
+        // Update descriptions
+        updateDndDesc(char.settings.dndSize);
+        updatePresetUI(char.settings.figurineSize);
+
+        // Set base radius slider (convert mm to cm)
+        const diameterCm = char.settings.baseRadiusMM * 0.2;
+        setBaseRadiusUI(diameterCm);
+
+      } else {
+        selectionBox.visible = false;
+      }
+    }
+
+    function addCharacterFromGLTF(gltf) {
+      hidePlaceholderText();
+
+      const char = new Character(nextCharId++);
+      const root = gltf.scene || gltf.scenes?.[0];
+
+      char.setModel(root);
+
+      // Apply current UI settings as default for new character
+      // If nothing selected, use current UI values (which might be defaults or last used)
+      char.applyPreset(dndSizeSelect.value, figurineSizeSelect.value);
+
+      // Auto-arrange: place next to others
+      if (characters.length > 0) {
+        let maxX = -Infinity;
+        characters.forEach(c => {
+          const { box } = computeBBox(c.group);
+          if (box.max.x > maxX) maxX = box.max.x;
+        });
+        if (maxX === -Infinity) maxX = 0;
+        char.group.position.set(maxX + 30, 0, 0);
+      }
+
+      exportGroup.add(char.group);
+      characters.push(char);
+      selectCharacter(char);
+    }
+
+    function makeFileResolver(files) {
+      const norm = (s) => s.replace(/^\.\//, '').replace(/\\/g, '/').replace(/\?.*$/, '').replace(/#.*$/, '');
+
+      // Prefer relative paths (webkitRelativePath or synthetic), fall back to file.name
+      const getRel = (f) => {
+        const p = (f.webkitRelativePath && f.webkitRelativePath.length > 0) ? f.webkitRelativePath : f.name;
+        return norm(p);
+      };
+
+      const fileMap = new Map();
+      const fileMapLower = new Map();
+      const byBase = new Map();
+      const byBaseLower = new Map();
+      for (const f of files) {
+        const pathLike = getRel(f);
+        const name = pathLike;
+        const lower = name.toLowerCase();
+        const base = name.substring(name.lastIndexOf('/') + 1);
+        fileMap.set(name, f);
+        fileMapLower.set(lower, f);
+        byBase.set(base, f);
+        byBaseLower.set(base.toLowerCase(), f);
+      }
+
+      loadingManager.setURLModifier((url) => {
+        const clean = norm(url);
+        const lower = clean.toLowerCase();
+        let f = fileMap.get(clean) || fileMapLower.get(lower);
+        if (!f) {
+          const base = clean.substring(clean.lastIndexOf('/') + 1);
+          f = byBase.get(base) || byBaseLower.get(base.toLowerCase());
+        }
+        if (f) return URL.createObjectURL(f);
+        return url;
+      });
+      return () => { loadingManager.setURLModifier(null); };
+    }
+
+    // Recursive file traversal for folders (legacy webkit entry API)
+    async function traverseFileTree(item) {
+      if (item.isFile) {
+        return new Promise((resolve) => {
+          item.file((file) => {
+            resolve([file]);
+          });
+        });
+      } else if (item.isDirectory) {
+        const dirReader = item.createReader();
+        const files = [];
+
+        // readEntries might not return all entries in one go (often capped at 100)
+        // We need to call it repeatedly until it returns an empty array.
+        const readEntriesPromise = async () => {
+          const entries = await new Promise((resolve) => {
+            try {
+              dirReader.readEntries((res) => resolve(res), (err) => {
+                console.warn('readEntries failed, skipping remaining entries:', err);
+                resolve([]); // Swallow error to avoid EncodingError cascading
+              });
+            } catch (e) {
+              console.warn('readEntries threw, skipping directory:', e);
+              resolve([]);
+            }
+          });
+          if (entries.length > 0) {
+            for (const entry of entries) {
+              files.push(...await traverseFileTree(entry));
+            }
+            await readEntriesPromise(); // Recurse to get next batch
+          }
+        };
+
+        await readEntriesPromise();
+        return files;
+      }
+      return [];
+    }
+
+    // File System Access API traversal (modern)
+    async function traverseFsHandle(handle, parentPath = '') {
+      const files = [];
+      try {
+        if (handle.kind === 'file') {
+          const file = await handle.getFile();
+          // Preserve a relative path so dependency URLs can be resolved
+          const relPath = parentPath ? `${parentPath}/${file.name}` : file.name;
+          try {
+            // Define a synthetic webkitRelativePath if missing
+            if (!('webkitRelativePath' in file) || !file.webkitRelativePath) {
+              Object.defineProperty(file, 'webkitRelativePath', { value: relPath, writable: false });
+            }
+          } catch (_) { /* non-critical */ }
+          files.push(file);
+        } else if (handle.kind === 'directory') {
+          const dirPath = parentPath ? `${parentPath}/${handle.name}` : handle.name;
+          for await (const [name, child] of handle.entries()) {
+            files.push(...await traverseFsHandle(child, dirPath));
+          }
+        }
+      } catch (e) {
+        console.warn('Error traversing FS handle:', e);
+      }
+      return files;
+    }
+
+    async function handleDropItems(items) {
+      // Prefer modern File System Access API if available on DataTransferItem
+      const supportsFSH = typeof items[0]?.getAsFileSystemHandle === 'function';
+      const allFiles = [];
+
+      if (supportsFSH) {
+        const handles = [];
+        for (let i = 0; i < items.length; i++) {
+          const it = items[i];
+          if (it.kind !== 'file') continue;
+          try {
+            const handle = await it.getAsFileSystemHandle();
+            if (handle) handles.push(handle);
+          } catch (e) {
+            console.warn('getAsFileSystemHandle failed, will fall back for this item:', e);
+          }
+        }
+        for (const h of handles) {
+          allFiles.push(...await traverseFsHandle(h, ''));
+        }
+      }
+
+      // Fallback to legacy webkit entries if modern path not available or yielded nothing
+      if (allFiles.length === 0) {
+        const entries = [];
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.kind === 'file') {
+            const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+            if (entry) {
+              entries.push(entry);
+            } else {
+              const file = item.getAsFile?.();
+              if (file) entries.push(file);
+            }
+          }
+        }
+
+        for (const entry of entries) {
+          try {
+            if (entry.isFile || entry.isDirectory) {
+              allFiles.push(...await traverseFileTree(entry));
+            } else if (entry instanceof File) {
+              allFiles.push(entry);
+            }
+          } catch (e) {
+            console.error('Error traversing entry:', entry, e);
+          }
+        }
+      }
+
+      if (allFiles.length > 0) handleFiles(allFiles);
+    }
+
+    function handleFiles(fileList) {
+      const files = Array.from(fileList);
+
+      // Find all GLBs
+      const glbs = files.filter(f => f.name.toLowerCase().endsWith('.glb'));
+      glbs.forEach(glb => {
+        try {
+          const url = URL.createObjectURL(glb);
+          loader.load(url, (gltf) => {
+            addCharacterFromGLTF(gltf);
+            URL.revokeObjectURL(url);
+          }, undefined, (err) => {
+            console.error('Failed to load GLB:', err);
+            URL.revokeObjectURL(url);
+          });
+        } catch (e) {
+          console.error("Could not create URL for GLB:", glb, e);
+        }
+      });
+
+      // Find all GLTFs
+      const gltfs = files.filter(f => f.name.toLowerCase().endsWith('.gltf'));
+      gltfs.forEach(gltfFile => {
+        try {
+          // For each GLTF, we try to use the entire file list to resolve dependencies
+          const cleanup = makeFileResolver(files);
+          const url = URL.createObjectURL(gltfFile);
+          loader.load(url, (gltf) => {
+            addCharacterFromGLTF(gltf);
+            URL.revokeObjectURL(url);
+            cleanup();
+          }, undefined, (err) => {
+            console.error('Failed to load GLTF:', err);
+            URL.revokeObjectURL(url);
+            cleanup();
+          });
+        } catch (e) {
+          console.error("Could not create URL for GLTF:", gltfFile, e);
+        }
+      });
+
+      if (glbs.length === 0 && gltfs.length === 0) {
+        alert('No model files found (.glb or .gltf).');
+      }
+    }
+
+    function doExportSTL() {
+      const exporter = new STLExporter();
+      let hasMesh = false;
+      exportGroup.traverse((o) => {
+        if (o.isMesh && o.geometry) hasMesh = true;
+      });
+      if (!hasMesh) {
+        alert('Nothing to export.');
+        return;
+      }
+
+      const EXPORT_Z_UP = true;
+      let target = exportGroup;
+      if (EXPORT_Z_UP) {
+        target = exportGroup.clone(true);
+        exportGroup.updateMatrixWorld(true);
+        target.updateMatrixWorld(true);
+        target.rotation.x = (target.rotation.x || 0) + Math.PI / 2;
+        target.updateMatrixWorld(true);
+      } else {
+        exportGroup.updateMatrixWorld(true);
+      }
+
+      const result = exporter.parse(target, { binary: true });
+      const blob = new Blob([result], { type: 'application/octet-stream' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'figurines_collection.stl';
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+
+    // --- Interaction ---
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    function onPointerDown(event) {
+      if (event.button !== 0) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObjects(exportGroup.children, true);
+
+      if (intersects.length > 0) {
+        let hit = intersects[0].object;
+        while (hit.parent && hit.parent !== exportGroup) {
+          hit = hit.parent;
+        }
+
+        const char = characters.find(c => c.group === hit);
+        if (char && char !== selectedCharacter) {
+          selectCharacter(char);
+        }
+      } else {
+        // Deselect if clicked empty space
+        selectCharacter(null);
+      }
+    }
+
+    viewportEl.addEventListener('pointerdown', onPointerDown);
+
+    // --- UI Listeners ---
+
+    function applyToSelectedOrAll(callback) {
+      if (selectedCharacter) {
+        callback(selectedCharacter);
+      } else {
+        characters.forEach(c => callback(c));
+      }
+    }
+
+    dndSizeSelect.addEventListener('change', () => {
+      updateDndDesc(dndSizeSelect.value);
+      applyToSelectedOrAll(c => c.applyPreset(dndSizeSelect.value, figurineSizeSelect.value));
+    });
+
+    figurineSizeSelect.addEventListener('change', () => {
+      updatePresetUI(figurineSizeSelect.value);
+      applyToSelectedOrAll(c => c.applyPreset(dndSizeSelect.value, figurineSizeSelect.value));
+    });
+
+    baseRadiusSlider.addEventListener('input', () => {
+      const diameterCm = Number(baseRadiusSlider.value);
+      baseRadiusValue.textContent = formatRadiusLabel(diameterCm);
+      applyToSelectedOrAll(c => {
+        c.settings.baseRadiusMM = diameterCm * 5;
+        c.updateBase();
+      });
+    });
+
+    baseHeightInput.addEventListener('change', () => {
+      applyToSelectedOrAll(c => {
+        c.settings.baseHeightMM = Number(baseHeightInput.value);
+        c.updateBase();
+      });
+    });
+
+    baseShapeSelect.addEventListener('change', () => {
+      applyToSelectedOrAll(c => {
+        c.settings.baseShape = baseShapeSelect.value;
+        c.updateBase();
+      });
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      const fl = e.target.files;
+      if (fl && fl.length > 0) handleFiles(fl);
+      fileInput.value = '';
+    });
+
+    resetViewBtn.addEventListener('click', () => {
+      const { box, size, center } = computeBBox(exportGroup);
+      if (box.isEmpty()) return;
+
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov = camera.fov * (Math.PI / 180);
+      let cameraZ = Math.abs(maxDim / (2 * Math.tan(fov / 2)));
+      cameraZ *= 1.5;
+
+      camera.position.set(center.x + cameraZ, center.y + cameraZ * 0.6, center.z + cameraZ);
+      controls.target.copy(center);
+      controls.update();
+    });
+
+    exportBtn.addEventListener('click', doExportSTL);
+
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const items = e.dataTransfer?.items;
+      if (items && items.length > 0) handleDropItems(items);
+    });
+
+    // Animation
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      if (selectedCharacter) {
+        selectionBox.update();
+      }
+      renderer.render(scene, camera);
+    }
+
+    // Init
+    async function init() {
+      resizeRenderer();
+
+      // Initialize UI text
+      updateDndDesc(dndSizeSelect.value);
+      updatePresetUI(figurineSizeSelect.value);
+
+      showPlaceholderText();
+
+      // Load default model
+      try {
+        const gltf = await loader.loadAsync('model/scene.gltf');
+        addCharacterFromGLTF(gltf);
+      } catch (e) {
+        console.warn('Could not load default model:', e);
+        // If default model fails, placeholder text remains visible
+      }
+
+      animate();
+    }
+
+    init();
+  </script>
+</body>
+
+</html>

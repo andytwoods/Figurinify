@@ -1,0 +1,39 @@
+/* Basic layout */
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; padding: 0; background: #111; color: #eaeaea; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+
+/* App layout is columnar: navbar (auto), control panel (auto, collapsible), viewport (flex) */
+#app { display: flex; flex-direction: column; min-height: calc(100vh - 0px); }
+
+/* Collapsible toolbar container */
+#toolbar { padding: 8px 10px; background: #141414; overflow-y: auto; }
+
+/* Viewport fills the remaining space */
+#viewport { position: relative; flex: 1 1 auto; min-height: 0; }
+#viewport canvas { display: block; width: 100% !important; height: 100% !important; }
+
+.section { margin-bottom: 8px; display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.section.row { flex-direction: row; gap: 8px; align-items: center; }
+label { font-size: 12px; opacity: 0.85; margin-right: 6px; }
+select { width: auto; min-width: 140px; max-width: 40vw; }
+input[type="number"] { width: 90px; }
+input[type="range"] { width: 220px; max-width: 55vw; }
+input[type="file"] { width: auto; max-width: 260px; }
+/* Scope custom button styling to the advanced toolbar only so Bootstrap navbar buttons keep their look */
+#toolbar button { cursor: pointer; padding: 6px 8px; border-radius: 5px; border: 1px solid #333; background: #1f1f1f; color: #eaeaea; font-size: 0.95rem; }
+
+/* Make helper notes wrap onto their own line under the controls */
+.section .note, .section small { flex-basis: 100%; opacity: 0.8; }
+#toolbar button.primary { background: #3578e5; border-color: #3578e5; }
+#toolbar button:hover { filter: brightness(1.1); }
+
+#baseRadiusValue { min-width: 3ch; display: inline-block; text-align: right; }
+
+@media (min-width: 992px) {
+  /* On larger screens, keep control panel visible by default (handled by .show) */
+}
+
+/* Make the navbar a bit more compact */
+.navbar { padding-top: 0.35rem; padding-bottom: 0.35rem; }
+.navbar .navbar-brand { font-size: 1rem; }
+.navbar .navbar-toggler { padding: 0.15rem 0.35rem; }
