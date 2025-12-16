@@ -332,7 +332,8 @@ class TkDownloaderApp(tk.Tk):
                 # Open Figurinify with modelUrl pointing to the resolved GLB (so the site can offer a one-click load)
                 try:
                     from urllib.parse import quote
-                    model_url_param = quote(resolved.glb_url, safe=':/?&=~.-_%')
+                    # Encode the entire GLB URL as a single query parameter value so &/?/= don't break it
+                    model_url_param = quote(resolved.glb_url, safe='')
                     fig_url = f"{FIGURINIFY_URL}?modelUrl={model_url_param}"
                     self.log(f"opening figurinify with detected model url…")
                     webbrowser.open(fig_url)
@@ -350,10 +351,7 @@ class TkDownloaderApp(tk.Tk):
                 download_file(resolved.glb_url, out_path, progress_cb, self.log)
 
                 self.set_status(f"download complete – {out_path.name}")
-                self.log("next step – opening figurinify…")
-                webbrowser.open(FIGURINIFY_URL)
-                self.log("in figurinify – click load and select the .glb from the downloads folder.")
-                self.set_status("figurinify opened – please load the .glb you just downloaded.")
+                self.log("download complete – switch to your browser tab to load the detected model, or use the site’s file picker.")
             except Exception as e:
                 self.set_status("failed – see log.")
                 self.log(f"error – {e}")

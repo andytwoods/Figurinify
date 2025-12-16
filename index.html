@@ -1026,11 +1026,35 @@
       const qp = getQueryParams();
       if (qp.modelUrl) {
         const decoded = decodeURIComponent(qp.modelUrl);
-        // Offer a one-click button to load the detected model
-        addAutoLoadButton('Load detected model', async () => {
+
+        // Prefer to proactively ask the user to load the detected model
+        const auto = qp.auto === '1' || qp.autoload === '1';
+        const shouldAsk = qp.ask !== '0';
+
+        const tryLoad = async () => {
           const ok = await loadDetectedModel(decoded);
-          if (!ok) alert('Failed to load detected model. Ensure the URL is reachable from the browser.');
-        });
+          if (!ok) {
+            alert('Failed to load detected model. The link may be expired or blocked by CORS. ' +
+                  'Try refreshing the source page and retry, or use the file picker.');
+          }
+        };
+
+        if (auto) {
+          // Auto load without prompting
+          tryLoad();
+        } else if (shouldAsk) {
+          // Ask the user explicitly
+          const pretty = decoded.length > 120 ? (decoded.slice(0, 117) + '…') : decoded;
+          if (window.confirm(`Load detected model from:\n${pretty}`)) {
+            tryLoad();
+          } else {
+            // If user cancels, still add a button so they can load later
+            addAutoLoadButton('Load detected model', tryLoad);
+          }
+        } else {
+          // No prompt; add a button as a passive option
+          addAutoLoadButton('Load detected model', tryLoad);
+        }
       }
 
       // Load default model unless a modelUrl param is provided
