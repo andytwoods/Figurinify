@@ -56,8 +56,8 @@
             consistent alignment and export.</small></div>
       </div>
       <div class="section">
-        <label for="fileInput">Load model (.glb recommended; for .gltf select the .gltf, .bin, and textures)</label>
-        <input id="fileInput" type="file" accept=".glb,.gltf,.bin,.png,.jpg,.jpeg,.ktx2" multiple />
+        <label for="fileInput">Load model (.glb/.stl recommended; for .gltf select the .gltf, .bin, and textures)</label>
+        <input id="fileInput" type="file" accept=".glb,.gltf,.stl,.bin,.png,.jpg,.jpeg,.ktx2" multiple />
       </div>
       <div class="section row">
         <button id="resetView">Reset View</button>
@@ -91,6 +91,7 @@
     import { MeshoptDecoder } from 'https://unpkg.com/three@0.160.0/examples/jsm/libs/meshopt_decoder.module.js';
     import { FontLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/FontLoader.js';
     import { TextGeometry } from 'https://unpkg.com/three@0.160.0/examples/jsm/geometries/TextGeometry.js';
+    import { STLLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/STLLoader.js';
 
     // DOM elements
     const viewportEl = document.getElementById('viewport');
@@ -586,6 +587,39 @@
       }
     }
 
+    const stlLoader = new STLLoader();
+    const stlMaterial = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.1, roughness: 0.8 });
+
+    function addCharacterFromGeometry(geometry) {
+      hidePlaceholderText();
+      geometry.computeVertexNormals();
+
+      const mesh = new THREE.Mesh(geometry, stlMaterial.clone());
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+
+      const root = new THREE.Group();
+      root.add(mesh);
+
+      const char = new Character(nextCharId++);
+      char.setModel(root);
+      char.applyPreset(dndSizeSelect.value, figurineSizeSelect.value);
+
+      if (characters.length > 0) {
+        let maxX = -Infinity;
+        characters.forEach(c => {
+          const { box } = computeBBox(c.group);
+          if (box.max.x > maxX) maxX = box.max.x;
+        });
+        if (maxX === -Infinity) maxX = 0;
+        char.group.position.set(maxX + 30, 0, 0);
+      }
+
+      exportGroup.add(char.group);
+      characters.push(char);
+      selectCharacter(char);
+    }
+
     function addCharacterFromGLTF(gltf) {
       hidePlaceholderText();
 
@@ -814,8 +848,25 @@
         }
       });
 
-      if (glbs.length === 0 && gltfs.length === 0) {
-        alert('No model files found (.glb or .gltf).');
+      // Find all STLs
+      const stls = files.filter(f => f.name.toLowerCase().endsWith('.stl'));
+      stls.forEach(stlFile => {
+        try {
+          const url = URL.createObjectURL(stlFile);
+          stlLoader.load(url, (geometry) => {
+            addCharacterFromGeometry(geometry);
+            URL.revokeObjectURL(url);
+          }, undefined, (err) => {
+            console.error('Failed to load STL:', err);
+            URL.revokeObjectURL(url);
+          });
+        } catch (e) {
+          console.error('Could not create URL for STL:', stlFile, e);
+        }
+      });
+
+      if (glbs.length === 0 && gltfs.length === 0 && stls.length === 0) {
+        alert('No model files found (.glb, .gltf, or .stl).');
       }
     }
 
