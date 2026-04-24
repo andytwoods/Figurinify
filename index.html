@@ -56,6 +56,14 @@
             consistent alignment and export.</small></div>
       </div>
       <div class="section">
+        <label>Rotate model 90°</label>
+        <div class="row">
+          <button id="rotateX">X</button>
+          <button id="rotateY">Y</button>
+          <button id="rotateZ">Z</button>
+        </div>
+      </div>
+      <div class="section">
         <label for="fileInput">Load model (.glb/.stl recommended; for .gltf select the .gltf, .bin, and textures)</label>
         <input id="fileInput" type="file" accept=".glb,.gltf,.stl,.bin,.png,.jpg,.jpeg,.ktx2" multiple />
       </div>
@@ -386,6 +394,15 @@
 
         this.modelGroup.position.x += diffX;
         this.modelGroup.position.z += diffZ;
+      }
+
+      rotateModel(axis) {
+        const angle = Math.PI / 2;
+        if (axis === 'x') this.modelGroup.rotateX(angle);
+        else if (axis === 'y') this.modelGroup.rotateY(angle);
+        else if (axis === 'z') this.modelGroup.rotateZ(angle);
+        this.centerModelXZ();
+        this.alignModelOnBase();
       }
 
       scaleToHeight(targetHeightMM) {
@@ -978,6 +995,10 @@
         c.updateBase();
       });
     });
+
+    document.getElementById('rotateX').addEventListener('click', () => applyToSelectedOrAll(c => c.rotateModel('x')));
+    document.getElementById('rotateY').addEventListener('click', () => applyToSelectedOrAll(c => c.rotateModel('y')));
+    document.getElementById('rotateZ').addEventListener('click', () => applyToSelectedOrAll(c => c.rotateModel('z')));
 
     fileInput.addEventListener('change', (e) => {
       const fl = e.target.files;
